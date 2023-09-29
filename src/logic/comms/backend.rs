@@ -64,7 +64,7 @@ impl AsRef<JoinHandle<Result<(), BackendError>>> for BackendCompletionThread {
 
 impl BackendCommandReceiver {
     pub fn receive_command(&mut self) -> Result<Option<BackendCommand>, BackendError> {
-        println!("receiving command..");
+        tracing::info!("Listening for backend command...");
         match self.as_mut().try_recv() {
             Ok(command) => {
                 println!("Command received: {:?}", command);

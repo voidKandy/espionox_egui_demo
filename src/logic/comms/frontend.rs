@@ -14,7 +14,7 @@ pub struct FrontendComms {
 #[derive(Debug, Clone)]
 pub enum FrontendRequest {
     Message(String),
-    Done,
+    DoneStreaming,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -36,7 +36,7 @@ impl Into<String> for FrontendRequest {
     fn into(self) -> String {
         match self {
             Self::Message(string) => string,
-            Self::Done => "Done".to_string(),
+            Self::DoneStreaming => String::new(),
         }
     }
 }

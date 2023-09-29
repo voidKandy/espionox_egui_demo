@@ -1,110 +1,120 @@
-use crate::logic::comms::{BackendCommand, FrontendComms};
+use crate::logic::comms::{BackendCommand, FrontendComms, FrontendRequest};
 
 use super::egui;
 
-use eframe::egui::{CentralPanel, SidePanel, TopBottomPanel};
+use eframe::{
+    egui::{CentralPanel, SidePanel, TopBottomPanel},
+    emath::Align2,
+    epaint::Stroke,
+};
 use espionox::context::{Message, MessageVector};
+
+/// Create a way to save multiple chats... Will need to tell backend which agent to use
+#[derive(Debug)]
+pub struct Chat {
+    name: String,
+    chat_buffer: MessageVector,
+    current_exchange: CurrentExchange,
+}
 
 #[derive(Debug)]
 pub struct ChatPage {
-    user_input: String,
+    // chats: Vec<Chat>,
     chat_buffer: MessageVector,
-    // comms: FrontendComms,
+    current_exchange: CurrentExchange,
 }
+
+#[derive(Default, Debug, Clone)]
+pub struct CurrentExchange {
+    pub user_input: String,
+    pub stream_buffer: Option<String>,
+}
+
+impl CurrentExchange {}
 
 impl ChatPage {
     pub fn new() -> Self {
         Self {
-            user_input: String::new(),
             chat_buffer: MessageVector::init(),
-            // comms,
+            current_exchange: CurrentExchange::default(),
         }
     }
-}
-impl ChatPage {
+
     pub fn display(&mut self, frontend: &FrontendComms, outer_ui: &mut egui::Ui) {
         let mut scroll_to_bottom = false;
 
-        // SidePanel::new(egui::panel::Side::Right, "OptionsPanel")
-        //     .resizable(false)
-        //     .show_separator_line(false)
-        //     .show(ui.ctx(), |ui| {
-        //         ui.menu_button("Templates", |ui| {
-        //             if ui.small_button("template").clicked() {
-        //                 println!();
-        //             }
-        //         });
-        //     });
-
-        // egui::Area::new("UserInput")
-        //     .anchor(egui::Align2::LEFT_BOTTOM, [0.0, 0.0])
-        //     .pivot(egui::Align2::CENTER_CENTER)
-        TopBottomPanel::bottom("user_input_panel")
-            .show_separator_line(false)
-            .resizable(false)
+        egui::Window::new("My Window")
+            .anchor(Align2::RIGHT_BOTTOM, [-5.0, -5.0])
+            .auto_sized()
+            .movable(false)
+            .title_bar(false)
             .show(outer_ui.ctx(), |ui| {
-                ui.horizontal_centered(|ui| {
-                    let user_input_box = egui::TextEdit::multiline(&mut self.user_input)
+                let user_input_box =
+                    egui::TextEdit::multiline(&mut self.current_exchange.user_input)
                         .desired_rows(1)
                         .lock_focus(true)
-                        .clip_text(true)
-                        .horizontal_align(eframe::emath::Align::LEFT)
-                        .vertical_align(eframe::emath::Align::TOP);
-                    let user_input_width = ui.available_size().x * 0.9;
-                    let user_input_height = ui.available_size().y * 0.15;
-                    let user_input_box_size: (f32, f32) = (user_input_width, user_input_height);
+                        .frame(false)
+                        .hint_text("Send a message")
+                        .vertical_align(eframe::emath::Align::BOTTOM);
+                let user_input_handle = ui.add(user_input_box);
 
-                    let user_input_handle = ui.add_sized(user_input_box_size, user_input_box);
+                let shift_enter_pressed = user_input_handle.has_focus()
+                    && ui.input(|i| i.modifiers.shift_only() && i.key_pressed(egui::Key::Enter));
+                let enter_pressed_with_content = user_input_handle.has_focus()
+                    && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                    && !self.current_exchange.user_input.trim().is_empty();
 
-                    if ui
-                        .button("Templates")
-                        .on_hover_text("Choose from your templates")
-                        .clicked()
-                    {
-                        todo!();
-                    }
+                if shift_enter_pressed {
+                    // self.current_exchange.user_input =
+                    //     format!("\n{}", self.current_exchange.user_input);
+                } else if enter_pressed_with_content {
+                    scroll_to_bottom = true;
+                    self.chat_buffer.as_mut().push(Message::new_standard(
+                        "user",
+                        self.current_exchange.user_input.as_str(),
+                    ));
+                    self.send_last_user_message_to_backend(frontend, outer_ui.ctx(), true);
+                }
+            });
 
-                    let shift_enter_pressed = user_input_handle.has_focus()
-                        && ui
-                            .input(|i| i.modifiers.shift_only() && i.key_pressed(egui::Key::Enter));
-                    let enter_pressed_with_content = user_input_handle.has_focus()
-                        && ui.input(|i| i.key_pressed(egui::Key::Enter))
-                        && !self.user_input.trim().is_empty();
-
-                    if shift_enter_pressed {
-                        self.user_input = format!("{}\n", self.user_input);
-                    } else if enter_pressed_with_content {
-                        scroll_to_bottom = true;
-
-                        self.chat_buffer
-                            .as_mut()
-                            .push(Message::new_standard("user", self.user_input.as_str()));
-                        self.send_last_user_message_to_backend(frontend, outer_ui.ctx(), true);
-                    }
-                });
+        SidePanel::new(egui::panel::Side::Left, "ChatsPanel")
+            .resizable(false)
+            .show(outer_ui.ctx(), |ui| {
+                ui.radio(true, "Some chat");
+                ui.radio(false, "Another one");
             });
 
         CentralPanel::default().show(outer_ui.ctx(), |ui| {
-            let chat_width = ui.available_size().x;
+            let chat_width = ui.available_size().x * 0.95;
             let chat_height = ui.available_size().y * 0.95;
             let chat_scroll_area = egui::ScrollArea::vertical()
                 .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
                 .auto_shrink([false; 2])
                 .max_height(chat_height)
+                .max_width(chat_width)
                 .stick_to_right(true);
 
             chat_scroll_area.show(ui, |ui| {
-                let buffer = &mut self.chat_buffer.to_string();
+                let buffer = &mut self.chat_buffer.as_ref();
+                for message in buffer.into_iter() {
+                    let color = match message.role().as_str() {
+                        "user" => egui::Color32::YELLOW,
+                        "assistant" => egui::Color32::GREEN,
+                        _ => egui::Color32::DARK_RED,
+                    };
+                    ui.colored_label(color, message.content().unwrap());
+                }
+                if let Some(current_stream_buffer) = &mut self.current_exchange.stream_buffer {
+                    let model_output = egui::TextEdit::multiline(current_stream_buffer)
+                        .text_color(egui::Color32::GREEN)
+                        .frame(false)
+                        .interactive(false);
+                    ui.add_sized([chat_width, chat_height], model_output);
+                }
+
                 ui.ctx().request_repaint();
 
-                self.update_chat_buffer_with_backend_response(frontend, ui.ctx());
-
-                let chat_display = egui::TextEdit::multiline(buffer)
-                    .frame(false)
-                    .interactive(false)
-                    .horizontal_align(eframe::emath::Align::Min);
-                let chat_size: (f32, f32) = (chat_width, chat_height);
-                ui.add_sized(chat_size, chat_display);
+                self.update_stream_buffer_with_backend_response(frontend, ui.ctx());
 
                 if scroll_to_bottom {
                     ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
@@ -112,6 +122,36 @@ impl ChatPage {
                 ui.set_max_height(chat_height);
             });
         });
+    }
+
+    fn update_stream_buffer_with_backend_response(
+        &mut self,
+        frontend: &FrontendComms,
+        ctx: &egui::Context,
+    ) {
+        if let Ok(response) = frontend.receiver.lock().unwrap().try_recv() {
+            match response {
+                FrontendRequest::DoneStreaming => {
+                    if let Some(s) = &self.current_exchange.stream_buffer {
+                        println!("We pushed: {}", s);
+                        self.chat_buffer.as_mut().push(Message::new_standard(
+                            "assistant",
+                            &self.current_exchange.stream_buffer.take().unwrap(),
+                        ));
+                    }
+                }
+                _ => {
+                    let res: String = response.into();
+                    match &self.current_exchange.stream_buffer {
+                        Some(buffer) => {
+                            self.current_exchange.stream_buffer = Some(format!("{}{}", buffer, res))
+                        }
+                        None => self.current_exchange.stream_buffer = Some(res),
+                    }
+                    ctx.request_repaint();
+                }
+            }
+        }
     }
 
     fn send_last_user_message_to_backend(
@@ -122,28 +162,14 @@ impl ChatPage {
     ) {
         ctx.request_repaint();
         let backend_command = match stream {
-            false => BackendCommand::SingleCompletion(self.user_input.to_owned()),
-            true => BackendCommand::StreamedCompletion(self.user_input.to_owned()),
+            false => BackendCommand::SingleCompletion(self.current_exchange.user_input.to_owned()),
+            true => BackendCommand::StreamedCompletion(self.current_exchange.user_input.to_owned()),
         };
-        self.user_input.clear();
+        self.current_exchange.user_input.clear();
 
         frontend
             .sender
             .try_send(backend_command)
             .expect("Failed to send user input to backend");
-    }
-
-    fn update_chat_buffer_with_backend_response(
-        &mut self,
-        frontend: &FrontendComms,
-        ctx: &egui::Context,
-    ) {
-        if let Ok(response) = frontend.receiver.lock().unwrap().try_recv() {
-            let res: String = response.into();
-            self.chat_buffer
-                .as_mut()
-                .push(Message::new_standard("assistant", &res));
-            ctx.request_repaint();
-        }
     }
 }

@@ -117,6 +117,8 @@ impl AppBackend {
                             .context
                             .push_to_buffer("assistant", full_message.join(""));
                         full_message.clear();
+
+                        sender.send(FrontendRequest::DoneStreaming).await.unwrap();
                         tracing::info!("Processed all responses");
                     }
                     None => {
