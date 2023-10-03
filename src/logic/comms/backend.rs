@@ -1,6 +1,5 @@
 use super::FrontendRequest;
 use crate::backend::BackendError;
-use espionox::agent::{Agent, CompletionReceiverHandler};
 use tokio::{
     sync::mpsc::{self, Receiver, Sender},
     task::JoinHandle,
@@ -8,21 +7,11 @@ use tokio::{
 
 #[derive(Clone, Debug)]
 pub enum BackendCommand {
-    SingleCompletion(String),
-    StreamedCompletion(String),
+    StreamedCompletion { agent_name: String, prompt: String },
 }
 
 unsafe impl Send for BackendCommand {}
 unsafe impl Sync for BackendCommand {}
-
-impl Into<String> for BackendCommand {
-    fn into(self) -> String {
-        match self {
-            Self::SingleCompletion(command) => command.to_string(),
-            Self::StreamedCompletion(command) => command.to_string(),
-        }
-    }
-}
 
 pub type BackendSender = Sender<FrontendRequest>;
 
@@ -94,11 +83,11 @@ impl BackendCommandReceiver {
     // }
 }
 
-impl BackendCommand {
-    pub fn is_empty(&self) -> bool {
-        match self {
-            Self::StreamedCompletion(string) => string.is_empty(),
-            Self::SingleCompletion(string) => string.is_empty(),
-        }
-    }
-}
+// impl BackendCommand {
+//     pub fn is_empty(&self) -> bool {
+//         match self {
+//             Self::StreamedCompletion(prompt) => prompt.is_empty(),
+//             Self::ChangeCurrentAgent(name) => name.is_empty(),
+//         }
+//     }
+// }

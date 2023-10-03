@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::logic::comms::{BackendCommand, FrontendComms, FrontendRequest};
 
 use super::egui;
@@ -5,7 +7,6 @@ use super::egui;
 use eframe::{
     egui::{CentralPanel, SidePanel, TopBottomPanel},
     emath::Align2,
-    epaint::Stroke,
 };
 use espionox::context::{Message, MessageVector};
 
@@ -15,13 +16,16 @@ pub struct Chat {
     name: String,
     chat_buffer: MessageVector,
     current_exchange: CurrentExchange,
+    processing_response: bool,
 }
 
 #[derive(Debug)]
 pub struct ChatPage {
-    // chats: Vec<Chat>,
-    chat_buffer: MessageVector,
-    current_exchange: CurrentExchange,
+    current_chat: String,
+    chats: HashMap<String, Chat>,
+    // processing_response: bool,
+    // chat_buffer: MessageVector,
+    // current_exchange: CurrentExchange,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -30,11 +34,48 @@ pub struct CurrentExchange {
     pub stream_buffer: Option<String>,
 }
 
-impl CurrentExchange {}
-
 impl ChatPage {
-    pub fn new() -> Self {
+    pub fn init(agent_names: Vec<String>) -> Self {
+        let current_chat = agent_names[0].to_owned();
+        let chats = Self::init_chats(agent_names);
         Self {
+            current_chat,
+            chats,
+        }
+    }
+    fn init_chats(names: Vec<String>) -> HashMap<String, Chat> {
+        let mut map = HashMap::new();
+        names.into_iter().for_each(|n| {
+            let chat = Chat::new(&n);
+            map.insert(n, chat);
+        });
+        map
+    }
+    fn chat_names(&self) -> Vec<String> {
+        self.chats.keys().cloned().collect()
+    }
+
+    pub fn display_current_chat(&mut self, frontend: &FrontendComms, outer_ui: &mut egui::Ui) {
+        SidePanel::new(egui::panel::Side::Left, "ChatsPanel")
+            .resizable(false)
+            .show(outer_ui.ctx(), |ui| {
+                for name in self.chat_names().iter() {
+                    if ui.radio(name == &self.current_chat, name).clicked() {
+                        self.current_chat = name.to_string();
+                    }
+                }
+            });
+
+        let chat = self.chats.get_mut(&self.current_chat).unwrap();
+        chat.display(frontend, outer_ui);
+    }
+}
+
+impl Chat {
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            processing_response: false,
             chat_buffer: MessageVector::init(),
             current_exchange: CurrentExchange::default(),
         }
@@ -68,20 +109,20 @@ impl ChatPage {
                     // self.current_exchange.user_input =
                     //     format!("\n{}", self.current_exchange.user_input);
                 } else if enter_pressed_with_content {
-                    scroll_to_bottom = true;
-                    self.chat_buffer.as_mut().push(Message::new_standard(
-                        "user",
-                        self.current_exchange.user_input.as_str(),
-                    ));
-                    self.send_last_user_message_to_backend(frontend, outer_ui.ctx(), true);
+                    match self.processing_response {
+                        true => {
+                            // SOmehow handle users trying to overwhelm the model
+                        }
+                        false => {
+                            scroll_to_bottom = true;
+                            self.chat_buffer.as_mut().push(Message::new_standard(
+                                "user",
+                                self.current_exchange.user_input.as_str(),
+                            ));
+                            self.send_last_user_message_to_backend(frontend, outer_ui.ctx());
+                        }
+                    }
                 }
-            });
-
-        SidePanel::new(egui::panel::Side::Left, "ChatsPanel")
-            .resizable(false)
-            .show(outer_ui.ctx(), |ui| {
-                ui.radio(true, "Some chat");
-                ui.radio(false, "Another one");
             });
 
         CentralPanel::default().show(outer_ui.ctx(), |ui| {
@@ -130,14 +171,15 @@ impl ChatPage {
         ctx: &egui::Context,
     ) {
         if let Ok(response) = frontend.receiver.lock().unwrap().try_recv() {
+            self.processing_response = true;
             match response {
                 FrontendRequest::DoneStreaming => {
-                    if let Some(s) = &self.current_exchange.stream_buffer {
-                        println!("We pushed: {}", s);
+                    if let Some(_) = &self.current_exchange.stream_buffer {
                         self.chat_buffer.as_mut().push(Message::new_standard(
                             "assistant",
                             &self.current_exchange.stream_buffer.take().unwrap(),
                         ));
+                        self.processing_response = false;
                     }
                 }
                 _ => {
@@ -154,16 +196,11 @@ impl ChatPage {
         }
     }
 
-    fn send_last_user_message_to_backend(
-        &mut self,
-        frontend: &FrontendComms,
-        ctx: &egui::Context,
-        stream: bool,
-    ) {
+    fn send_last_user_message_to_backend(&mut self, frontend: &FrontendComms, ctx: &egui::Context) {
         ctx.request_repaint();
-        let backend_command = match stream {
-            false => BackendCommand::SingleCompletion(self.current_exchange.user_input.to_owned()),
-            true => BackendCommand::StreamedCompletion(self.current_exchange.user_input.to_owned()),
+        let backend_command = BackendCommand::StreamedCompletion {
+            agent_name: self.name.to_owned(),
+            prompt: self.current_exchange.user_input.to_owned(),
         };
         self.current_exchange.user_input.clear();
 

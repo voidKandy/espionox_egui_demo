@@ -43,7 +43,7 @@ impl Default for MainApplication {
 
         Self {
             state: State::default(),
-            chat_page: ChatPage::new(),
+            chat_page: ChatPage::init(backend.all_agent_names()),
             settings_page: SettingsPage::from(&backend),
             frontend,
             backend,
@@ -62,11 +62,10 @@ impl eframe::App for MainApplication {
         self.top_bar_ui(ctx, frame);
         Self::display_main_window(ctx, frame, |ui| match self.state {
             State::Chat => {
-                if !self.backend.agent_thread() {
-                    self.backend.spawn_completion_thread().unwrap();
-                    // self.backend.spawn_agent_thread().unwrap();
+                if !self.backend.max_chat_threads_spawned() {
+                    self.backend.spawn_chat_threads().unwrap();
                 }
-                self.chat_page.display(&self.frontend, ui);
+                self.chat_page.display_current_chat(&self.frontend, ui);
             }
             State::Settings => self.settings_page.display(ui),
         });

@@ -17,13 +17,6 @@ pub enum FrontendRequest {
     Message(String),
     Done,
 }
-
-#[derive(Default, Debug, Clone)]
-pub struct CurrentExchange {
-    pub user_input_field: String,
-    pub agent_responses: Vec<FrontendRequest>,
-}
-
 unsafe impl Send for FrontendRequest {}
 unsafe impl Sync for FrontendRequest {}
 
