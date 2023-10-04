@@ -6,8 +6,6 @@ use tokio::sync::mpsc;
 
 #[derive(Debug)]
 pub struct AppFrontend {
-    // pub current_exchange: CurrentExchange,
-    // pub active_buffer: MessageVector,
     pub sender: Arc<mpsc::Sender<BackendCommand>>,
     pub receiver: Arc<Mutex<mpsc::Receiver<FrontendRequest>>>,
 }
@@ -46,7 +44,6 @@ impl AppFrontend {
     ) -> Self {
         Self {
             current_exchange: CurrentExchange::default(),
-            // active_buffer: MessageVector::init(),
             sender: sender.into(),
             receiver: Arc::new(Mutex::new(receiver)),
         }
@@ -56,10 +53,6 @@ impl AppFrontend {
         use egui::text::LayoutJob;
         let mut job = LayoutJob::default();
         while let Ok(response) = self.receiver.to_owned().lock().unwrap().try_recv() {
-            // self.current_exchange.agent_responses.push(response.into());
-            // }
-
-            // for request in self.current_exchange.agent_responses.iter() {
             match response {
                 FrontendRequest::Message(message) => job.append(
                     &format!("{}", message),

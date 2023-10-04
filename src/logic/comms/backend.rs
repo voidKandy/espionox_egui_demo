@@ -1,5 +1,6 @@
 use super::FrontendRequest;
 use crate::backend::BackendError;
+use espionox::agent::AgentSettings;
 use tokio::{
     sync::mpsc::{self, Receiver, Sender},
     task::JoinHandle,
@@ -7,7 +8,14 @@ use tokio::{
 
 #[derive(Clone, Debug)]
 pub enum BackendCommand {
-    StreamedCompletion { agent_name: String, prompt: String },
+    StreamedCompletion {
+        agent_name: String,
+        prompt: String,
+    },
+    NewChatThread {
+        name: String,
+        settings: AgentSettings,
+    },
 }
 
 unsafe impl Send for BackendCommand {}
@@ -16,7 +24,7 @@ unsafe impl Sync for BackendCommand {}
 pub type BackendSender = Sender<FrontendRequest>;
 
 #[derive(Debug)]
-pub struct BackendCompletionThread(JoinHandle<Result<(), BackendError>>);
+pub struct BackendThread(JoinHandle<Result<(), BackendError>>);
 
 #[derive(Debug)]
 pub struct BackendCommandReceiver(Receiver<BackendCommand>);
@@ -39,13 +47,13 @@ impl AsMut<Receiver<BackendCommand>> for BackendCommandReceiver {
     }
 }
 
-impl From<JoinHandle<Result<(), BackendError>>> for BackendCompletionThread {
+impl From<JoinHandle<Result<(), BackendError>>> for BackendThread {
     fn from(value: JoinHandle<Result<(), BackendError>>) -> Self {
         Self(value)
     }
 }
 
-impl AsRef<JoinHandle<Result<(), BackendError>>> for BackendCompletionThread {
+impl AsRef<JoinHandle<Result<(), BackendError>>> for BackendThread {
     fn as_ref(&self) -> &JoinHandle<Result<(), BackendError>> {
         &self.0
     }
@@ -65,29 +73,4 @@ impl BackendCommandReceiver {
             },
         }
     }
-
-    // pub async fn get_completion_receiver(
-    //     &mut self,
-    //     agent: &mut Agent,
-    // ) -> Result<CompletionReceiverHandler, BackendError> {
-    //     match self.receive_command() {
-    //         Ok(command) => {
-    //             let prompt: String = command.into();
-    //             Ok(agent
-    //                 .stream_prompt(prompt)
-    //                 .await
-    //                 .expect("Failed to get receiver"))
-    //         }
-    //         Err(err) => Err(err),
-    //     }
-    // }
 }
-
-// impl BackendCommand {
-//     pub fn is_empty(&self) -> bool {
-//         match self {
-//             Self::StreamedCompletion(prompt) => prompt.is_empty(),
-//             Self::ChangeCurrentAgent(name) => name.is_empty(),
-//         }
-//     }
-// }

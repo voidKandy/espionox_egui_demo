@@ -5,12 +5,18 @@ use crate::logic::comms::{BackendCommand, FrontendComms, FrontendRequest};
 use super::egui;
 
 use eframe::{
-    egui::{CentralPanel, SidePanel, TopBottomPanel},
+    egui::{CentralPanel, SidePanel, TopBottomPanel, Window},
     emath::Align2,
 };
-use espionox::context::{Message, MessageVector};
+use espionox::{
+    agent::AgentSettings,
+    context::{
+        long_term::LongTermMemory,
+        short_term::{MemoryCache, ShortTermMemory},
+        Message, MessageVector,
+    },
+};
 
-/// Create a way to save multiple chats... Will need to tell backend which agent to use
 #[derive(Debug)]
 pub struct Chat {
     name: String,
@@ -23,9 +29,8 @@ pub struct Chat {
 pub struct ChatPage {
     current_chat: String,
     chats: HashMap<String, Chat>,
-    // processing_response: bool,
-    // chat_buffer: MessageVector,
-    // current_exchange: CurrentExchange,
+    create_new_chat_modal_open: bool,
+    create_chat_modal: CreateNewChatModal,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -34,13 +39,83 @@ pub struct CurrentExchange {
     pub stream_buffer: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct CreateNewChatModal {
+    chat_name: String,
+    init_prompt: String,
+    selected_stm: ShortTermMemory,
+    selected_ltm: LongTermMemory,
+}
+
+impl Default for CreateNewChatModal {
+    fn default() -> Self {
+        Self {
+            chat_name: String::new(),
+            init_prompt: String::new(),
+            selected_stm: ShortTermMemory::default(),
+            selected_ltm: LongTermMemory::default(),
+        }
+    }
+}
+
+impl CreateNewChatModal {
+    fn settings(&self) -> AgentSettings {
+        AgentSettings::new()
+            .short_term(self.selected_stm.clone())
+            .init_prompt(MessageVector::init_with_system_prompt(&self.init_prompt))
+            // .long_term(self.selected_ltm)
+            .finish()
+    }
+    fn display_modal(&mut self, ui: &mut egui::Ui, frontend: &FrontendComms, open: &mut bool) {
+        egui::Window::new("Create New Chat")
+            .open(open)
+            .show(ui.ctx(), |ui| {
+                // let mut stm = &self.selected_stm;
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.chat_name)
+                        .hint_text("Put a chat name here"),
+                );
+                ui.label("Short Term Memory");
+                ui.radio_value(&mut self.selected_stm, ShortTermMemory::Forget, "No STM");
+                ui.radio_value(
+                    &mut self.selected_stm,
+                    ShortTermMemory::Cache(MemoryCache::default()),
+                    "Cached Memory",
+                );
+                ui.label("Long Term Memory");
+                ui.radio_value(&mut self.selected_ltm, LongTermMemory::None, "No LTM");
+                // let mut init_prompt = String::new();
+                let init_prompt_te = egui::TextEdit::multiline(&mut self.init_prompt)
+                    .hint_text("Put your desired system prompt here");
+                let text_edit_handle = ui.add(init_prompt_te);
+                if ui.button("Create New Chat").clicked() {
+                    if self.chat_name.is_empty() {
+                        ui.label("Please fill out the name field");
+                    } else {
+                        let name = &self.chat_name;
+                        let name = name.to_string();
+                        let settings = self.settings();
+                        let create_command = BackendCommand::NewChatThread { name, settings };
+                        frontend
+                            .sender
+                            .try_send(create_command)
+                            .expect("Failed to send chat creation command")
+                    }
+                    // self.create_new_chat_modal_open = false;
+                }
+            });
+    }
+}
+
 impl ChatPage {
-    pub fn init(agent_names: Vec<String>) -> Self {
+    pub fn init(agent_names: &Vec<String>) -> Self {
         let current_chat = agent_names[0].to_owned();
-        let chats = Self::init_chats(agent_names);
+        let chats = Self::init_chats(agent_names.to_vec());
         Self {
             current_chat,
             chats,
+            create_new_chat_modal_open: false,
+            create_chat_modal: CreateNewChatModal::default(),
         }
     }
     fn init_chats(names: Vec<String>) -> HashMap<String, Chat> {
@@ -56,13 +131,33 @@ impl ChatPage {
     }
 
     pub fn display_current_chat(&mut self, frontend: &FrontendComms, outer_ui: &mut egui::Ui) {
+        if self.create_new_chat_modal_open {
+            self.create_chat_modal.display_modal(
+                outer_ui,
+                frontend,
+                &mut self.create_new_chat_modal_open,
+            );
+        }
+
         SidePanel::new(egui::panel::Side::Left, "ChatsPanel")
             .resizable(false)
             .show(outer_ui.ctx(), |ui| {
+                // let new_chat_command = BackendCommand::NewChatThread{ name, setting }
+                if ui.small_button("➕").clicked() {
+                    self.create_new_chat_modal_open = true;
+                    // frontend.sender.send(value)
+                }
                 for name in self.chat_names().iter() {
-                    if ui.radio(name == &self.current_chat, name).clicked() {
-                        self.current_chat = name.to_string();
-                    }
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.radio(name == &self.current_chat, name).clicked() {
+                            self.current_chat = name.to_string();
+                        }
+                        if ui.small_button("❌").clicked() {
+                            egui::Window::new("SettingsWindow").show(ui.ctx(), |ui| {
+                                ui.label("Hello World!");
+                            });
+                        }
+                    });
                 }
             });
 
