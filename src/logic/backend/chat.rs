@@ -33,7 +33,6 @@ impl ChatAgentThread {
             settings,
             sender: None,
             outer_sender,
-            // receiver: None,
         };
         agent_thread.spawn_chat_thread()?;
         Ok(agent_thread)
@@ -51,7 +50,7 @@ impl ChatAgentThread {
             loop {
                 match rx.try_recv() {
                     Ok(prompt) => {
-                        tracing::info!("Prompt received on agent thread...");
+                        tracing::info!("Prompt received on {} agent thread...", chat_name);
                         Self::handle_completion_stream(
                             chat_name.clone(),
                             prompt,
@@ -66,9 +65,16 @@ impl ChatAgentThread {
                     //     std::thread::sleep(std::time::Duration::from_secs(2));
                     // }
                     Err(err) => {
-                        tracing::warn!("Error when trying to receive in agent thread: {:?}", err);
+                        if err == tokio::sync::mpsc::error::TryRecvError::Empty {
+                            std::thread::sleep(std::time::Duration::from_secs(2));
+                        } else {
+                            tracing::warn!(
+                                "Error when trying to receive in {} agent thread: {:?}",
+                                chat_name,
+                                err
+                            );
+                        }
                         // tracing::info!("Prompt not received on agent thread...");
-                        std::thread::sleep(std::time::Duration::from_secs(2));
                     }
                 }
             }

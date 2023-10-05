@@ -5,6 +5,7 @@ use super::egui;
 use eframe::{
     egui::{CentralPanel, SidePanel},
     emath::Align2,
+    epaint::Color32,
 };
 use espionox::{
     agent::AgentSettings,
@@ -14,6 +15,7 @@ use espionox::{
         Message, MessageVector,
     },
 };
+use tokio::sync::oneshot::error;
 
 #[derive(Debug)]
 pub struct Chat {
@@ -43,6 +45,7 @@ pub struct CreateNewChatModal {
     init_prompt: String,
     selected_stm: ShortTermMemory,
     selected_ltm: LongTermMemory,
+    error_message: String,
 }
 
 impl Default for CreateNewChatModal {
@@ -52,7 +55,14 @@ impl Default for CreateNewChatModal {
             init_prompt: String::new(),
             selected_stm: ShortTermMemory::default(),
             selected_ltm: LongTermMemory::default(),
+            error_message: String::new(),
         }
+    }
+}
+
+impl CreateNewChatModal {
+    fn clear(&mut self) {
+        *self = Self::default();
     }
 }
 
@@ -77,45 +87,6 @@ impl CreateNewChatModal {
             // .long_term(self.selected_ltm)
             .finish()
     }
-    fn display_modal(&mut self, ui: &mut egui::Ui, frontend: &FrontendComms, open: &mut bool) {
-        egui::Window::new("Create New Chat")
-            .open(open)
-            .show(ui.ctx(), |ui| {
-                // let mut stm = &self.selected_stm;
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.chat_name)
-                        .hint_text("Put a chat name here"),
-                );
-                ui.label("Short Term Memory");
-                ui.radio_value(&mut self.selected_stm, ShortTermMemory::Forget, "No STM");
-                ui.radio_value(
-                    &mut self.selected_stm,
-                    ShortTermMemory::Cache(MemoryCache::default()),
-                    "Cached Memory",
-                );
-                ui.label("Long Term Memory");
-                ui.radio_value(&mut self.selected_ltm, LongTermMemory::None, "No LTM");
-                // let mut init_prompt = String::new();
-                let init_prompt_te = egui::TextEdit::multiline(&mut self.init_prompt)
-                    .hint_text("Put your desired system prompt here");
-                let _ = ui.add(init_prompt_te);
-                if ui.button("Create New Chat").clicked() {
-                    if self.chat_name.is_empty() {
-                        ui.label("Please fill out the name field");
-                    } else {
-                        let name = &self.chat_name;
-                        let name = name.to_string();
-                        let settings = self.settings();
-                        let create_command = BackendCommand::NewChatThread { name, settings };
-                        frontend
-                            .sender
-                            .try_send(create_command)
-                            .expect("Failed to send chat creation command")
-                    }
-                    // self.create_new_chat_modal_open = false;
-                }
-            });
-    }
 }
 
 impl ChatPage {
@@ -128,6 +99,59 @@ impl ChatPage {
             create_new_chat_modal_open: false,
             create_chat_modal: CreateNewChatModal::default(),
         }
+    }
+
+    fn display_modal(&mut self, ui: &mut egui::Ui, frontend: &FrontendComms) {
+        let existing_names = self.all_chat_names();
+        let modal = &mut self.create_chat_modal;
+        egui::Window::new("Create New Chats")
+            .open(&mut self.create_new_chat_modal_open)
+            .resizable(false)
+            .movable(false)
+            .collapsible(false)
+            .anchor(Align2::RIGHT_TOP, [-5.0, -5.0])
+            .show(ui.ctx(), |ui| {
+                // let mut stm = &modal.selected_stm;
+                ui.add(
+                    egui::TextEdit::singleline(&mut modal.chat_name)
+                        .hint_text("Put a chat name here"),
+                );
+                ui.label("Short Term Memory");
+                ui.radio_value(&mut modal.selected_stm, ShortTermMemory::Forget, "No STM");
+                ui.radio_value(
+                    &mut modal.selected_stm,
+                    ShortTermMemory::Cache(MemoryCache::default()),
+                    "Cached Memory",
+                );
+                ui.label("Long Term Memory");
+                ui.radio_value(&mut modal.selected_ltm, LongTermMemory::None, "No LTM");
+                let init_prompt_te = egui::TextEdit::multiline(&mut modal.init_prompt)
+                    .hint_text("Put your desired system prompt here");
+                let _ = ui.add(init_prompt_te);
+                let error_message = &modal.error_message;
+                if !error_message.is_empty() {
+                    ui.colored_label(Color32::RED, error_message);
+                }
+                if ui.button("Create New Chat").clicked() {
+                    if modal.chat_name.is_empty() {
+                        modal.error_message = "Please fill out the name field".to_string();
+                    }
+                    if existing_names.contains(&modal.chat_name) {
+                        modal.error_message = "Cannot create duplicate chat names".to_string();
+                    } else {
+                        let name = &modal.chat_name;
+                        let name = name.to_string();
+                        let settings = modal.settings();
+                        let create_command = BackendCommand::NewChatThread { name, settings };
+                        frontend
+                            .sender
+                            .try_send(create_command)
+                            .expect("Failed to send chat creation command");
+                        modal.clear();
+                    }
+                    // *open = false;
+                }
+            });
     }
 
     fn listen_for_chat_updates(&mut self, frontend: &FrontendComms, ctx: &egui::Context) {
@@ -157,8 +181,8 @@ impl ChatPage {
                     );
                     ctx.request_repaint();
                 }
-                FrontendRequest::NewChatThread(name) => {
-                    let new_chat = Chat::new(&name);
+                FrontendRequest::NewChatThread(chat_name) => {
+                    let new_chat = Chat::new(&chat_name);
                     self.chats.push(new_chat);
                 }
             }
@@ -178,13 +202,13 @@ impl ChatPage {
         self.chats.iter_mut().find(|ch| ch.name == name)
     }
 
+    fn all_chat_names(&self) -> Vec<String> {
+        self.chats.iter().map(|ch| ch.name.to_string()).collect()
+    }
+
     pub fn display_current_chat(&mut self, frontend: &FrontendComms, outer_ui: &mut egui::Ui) {
         if self.create_new_chat_modal_open {
-            self.create_chat_modal.display_modal(
-                outer_ui,
-                frontend,
-                &mut self.create_new_chat_modal_open,
-            );
+            self.display_modal(outer_ui, frontend);
         }
 
         self.listen_for_chat_updates(frontend, outer_ui.ctx());
@@ -192,8 +216,12 @@ impl ChatPage {
         SidePanel::new(egui::panel::Side::Left, "ChatsPanel")
             .resizable(false)
             .show(outer_ui.ctx(), |ui| {
-                if ui.small_button("➕").clicked() {
-                    self.create_new_chat_modal_open = true;
+                let add_button_value = match self.create_new_chat_modal_open {
+                    true => "➖",
+                    false => "➕",
+                };
+                if ui.button(add_button_value).clicked() {
+                    self.create_new_chat_modal_open = !self.create_new_chat_modal_open;
                 }
                 for name in self.chats.iter().map(|ch| &ch.name) {
                     let is_selected = *name == self.current_chat_name;
@@ -303,7 +331,6 @@ impl Chat {
                         .interactive(false);
                     ui.add_sized([chat_width, chat_height], model_output);
                 }
-                // self.update_stream_buffer_with_backend_response(frontend, ui.ctx());
                 ui.ctx().request_repaint();
 
                 if scroll_to_bottom {
@@ -313,36 +340,6 @@ impl Chat {
             });
         });
     }
-
-    // fn update_stream_buffer_with_backend_response(
-    //     &mut self,
-    //     frontend: &FrontendComms,
-    //     ctx: &egui::Context,
-    // ) {
-    //     if let Ok(response) = frontend.receiver.lock().unwrap().try_recv() {
-    //         tracing::info!("Frontend got response: {:?}", response);
-    //         match response {
-    //             FrontendRequest::DoneStreaming => {
-    //                 if self.current_exchange.stream_buffer.is_some() {
-    //                     self.chat_buffer.as_mut().push(Message::new_standard(
-    //                         "assistant",
-    //                         &self.current_exchange.stream_buffer.take().unwrap(),
-    //                     ));
-    //                     self.processing_response = false;
-    //                 }
-    //             }
-    //             FrontendRequest::StreamToken { token, chat_name } => {
-    //                 self.current_exchange.push_to_stream_buffer(&token);
-    //                 tracing::info!(
-    //                     "Updated buffer: {}",
-    //                     self.current_exchange.stream_buffer.clone().unwrap()
-    //                 );
-    //                 ctx.request_repaint();
-    //             }
-    //             _ => {}
-    //         }
-    //     }
-    // }
 
     fn send_last_user_message_to_backend(&mut self, frontend: &FrontendComms, ctx: &egui::Context) {
         ctx.request_repaint();
