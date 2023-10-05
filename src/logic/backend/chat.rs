@@ -1,7 +1,7 @@
 use espionox::agent::{Agent, AgentSettings};
 
 use super::{BackendError, BackendSender};
-use crate::comms::FrontendRequest;
+use crate::{comms::FrontendRequest, logic::comms::BackendCommand};
 use std::sync::Arc;
 use tokio::{
     sync::{mpsc, Mutex},
@@ -10,26 +10,42 @@ use tokio::{
 
 #[derive(Debug)]
 pub(super) struct ChatAgentThread {
-    pub(super) handle: Option<JoinHandle<()>>,
-    pub(super) name: String,
-    pub(super) settings: AgentSettings,
+    handle: Option<JoinHandle<()>>,
+    name: String,
+    settings: AgentSettings,
     pub(super) sender: Option<mpsc::Sender<String>>,
-    pub(super) outer_sender: Arc<BackendSender>,
+    outer_sender: Arc<BackendSender>,
 }
 
 #[derive(Debug, Clone)]
 pub(super) struct ChatThreadVector(Vec<Arc<Mutex<ChatAgentThread>>>);
 
 impl ChatAgentThread {
+    pub fn new(
+        name: &str,
+        settings: AgentSettings,
+        outer_sender: Arc<BackendSender>,
+    ) -> Result<Self, BackendError> {
+        let mut agent_thread = ChatAgentThread {
+            handle: None,
+            name: name.to_string(),
+            settings,
+            sender: None,
+            outer_sender,
+        };
+        agent_thread.spawn_chat_thread()?;
+        Ok(agent_thread)
+    }
+
     #[tracing::instrument(name = "Spawn completion thread")]
     pub fn spawn_chat_thread(&mut self) -> anyhow::Result<()> {
         let (tx, mut rx) = mpsc::channel::<String>(5);
         self.sender = Some(tx);
         let outer_sender = Arc::clone(&self.outer_sender);
         let mut agent = Agent::build(self.settings.to_owned()).expect("Failed to build agent");
+        tracing::info!("Listening on {} agent thread...", self.name);
         let handle = tokio::spawn(async move {
             loop {
-                tracing::info!("Listening for prompt on agent thread...");
                 match rx.try_recv() {
                     Ok(prompt) => {
                         tracing::info!("Prompt received on agent thread...");
@@ -68,8 +84,11 @@ impl ChatAgentThread {
             .map_err(|err| BackendError::Unexpected(err.into()))?;
         let mut full_message = vec![];
         while let Ok(Some(token)) = stream_receiver.receive().await {
-            tracing::info!("token got: {}", token);
-            sender.send(token.to_owned().into()).await.unwrap();
+            tracing::info!("Sending Token: {}", token);
+            sender
+                .send(FrontendRequest::Message(token.to_owned()).to_owned())
+                .await
+                .unwrap();
             full_message.push(token.to_owned());
         }
         agent
@@ -93,7 +112,16 @@ impl From<Vec<ChatAgentThread>> for ChatThreadVector {
     }
 }
 
+impl AsMut<Vec<Arc<Mutex<ChatAgentThread>>>> for ChatThreadVector {
+    fn as_mut(&mut self) -> &mut Vec<Arc<Mutex<ChatAgentThread>>> {
+        &mut self.0
+    }
+}
+
 impl ChatThreadVector {
+    pub fn push(&mut self, thread: ChatAgentThread) {
+        self.as_mut().push(Arc::new(Mutex::new(thread)));
+    }
     pub fn get_by_name(&self, name: &str) -> Option<tokio::sync::MutexGuard<'_, ChatAgentThread>> {
         self.0
             .iter()

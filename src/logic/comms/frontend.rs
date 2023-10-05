@@ -15,6 +15,7 @@ pub struct FrontendComms {
 pub enum FrontendRequest {
     Message(String),
     DoneStreaming,
+    NewChatThread(String),
 }
 
 #[derive(Default, Debug, Clone)]
@@ -25,21 +26,6 @@ pub struct CurrentExchange {
 
 unsafe impl Send for FrontendRequest {}
 unsafe impl Sync for FrontendRequest {}
-
-impl From<String> for FrontendRequest {
-    fn from(str: String) -> Self {
-        Self::Message(str)
-    }
-}
-
-impl Into<String> for FrontendRequest {
-    fn into(self) -> String {
-        match self {
-            Self::Message(string) => string,
-            Self::DoneStreaming => String::new(),
-        }
-    }
-}
 
 impl FrontendComms {
     pub fn init(sender: FrontendSender, receiver: FrontendReceiver) -> Self {

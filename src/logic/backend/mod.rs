@@ -6,7 +6,7 @@ use espionox::{
     context::MessageVector,
 };
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, RwLock};
 
 #[derive(thiserror::Error, Debug)]
 pub enum BackendError {
@@ -29,7 +29,7 @@ impl std::fmt::Display for BackendError {
 #[derive(Debug)]
 pub struct AppBackend {
     pub agent_thread_names: Vec<String>,
-    agent_threads: Arc<ChatThreadVector>,
+    agent_threads: Arc<RwLock<ChatThreadVector>>,
     main_thread: Option<BackendThread>,
     sender: Arc<BackendSender>,
     receiver: Arc<Mutex<BackendCommandReceiver>>,
@@ -57,27 +57,20 @@ impl AppBackend {
         backend
     }
 
-    fn create_default_agent_threads(sender: Arc<BackendSender>) -> (ChatThreadVector, Vec<String>) {
-        let mut agents = Vec::new();
-        let mut names = Vec::new();
-        let name = "Default".to_string();
-        names.push(name.to_owned());
-
+    fn create_default_agent_threads(
+        sender: Arc<BackendSender>,
+    ) -> (RwLock<ChatThreadVector>, Vec<String>) {
+        let names = vec!["Default", "Default2"];
         let settings = AgentSettings::default();
-        let outer_sender = Arc::clone(&sender);
-        let mut agent_thread = ChatAgentThread {
-            handle: None,
-            name,
-            settings,
-            sender: None,
-            outer_sender,
-        };
-
-        agent_thread
-            .spawn_chat_thread()
-            .expect("Failed to spawn chat thread");
-        agents.push(agent_thread);
-        (ChatThreadVector::from(agents), names)
+        let agent_thread =
+            ChatAgentThread::new(names[0], settings.clone(), Arc::clone(&sender)).unwrap();
+        let agent_thread2 =
+            ChatAgentThread::new(names[1], settings.clone(), Arc::clone(&sender)).unwrap();
+        let agents = vec![agent_thread, agent_thread2];
+        (
+            RwLock::new(ChatThreadVector::from(agents)),
+            names.iter().map(|n| n.to_string()).collect(),
+        )
     }
 
     pub fn buffer(&self, agent: &Agent) -> anyhow::Result<Arc<MessageVector>> {
@@ -87,6 +80,7 @@ impl AppBackend {
 
     pub fn spawn_main_thread(&mut self) -> Result<(), BackendError> {
         let receiver = Arc::clone(&self.receiver);
+        let outer_sender = Arc::clone(&self.sender);
         let agent_threads = Arc::clone(&self.agent_threads);
         let handle = tokio::spawn(async move {
             loop {
@@ -98,13 +92,27 @@ impl AppBackend {
                     match command {
                         BackendCommand::NewChatThread { name, settings } => {
                             tracing::info!("Received command to create new chat thread: {}", name);
+                            let new_thread =
+                                ChatAgentThread::new(&name, settings, Arc::clone(&outer_sender))
+                                    .unwrap();
+
+                            agent_threads.write().await.push(new_thread);
+                            let frontend_request = FrontendRequest::NewChatThread(name);
+                            outer_sender.send(frontend_request).await.map_err(|err| {
+                                BackendError::Unexpected(anyhow::anyhow!(
+                                    "Error sending command to agent thread: {:?}",
+                                    err
+                                ))
+                            })?
+
                             // Create easy function for adding agents to threads list
                             // agent_threads_lock.insert(name, settings);
                             // self.agent_settings.insert(name, settings);
                             // Ok(())
                         }
                         BackendCommand::StreamedCompletion { agent_name, prompt } => {
-                            let agent_thread = agent_threads
+                            let threads_lock = agent_threads.read().await;
+                            let agent_thread = threads_lock
                                 .get_by_name(&agent_name)
                                 .expect("Failed to get chat thread");
                             if let Some(sender) = &agent_thread.sender {
