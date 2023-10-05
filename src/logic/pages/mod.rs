@@ -1,5 +1,5 @@
-mod chat;
-mod settings;
+pub mod chat;
+pub mod settings;
 
 pub use chat::ChatPage;
 pub use settings::SettingsPage;

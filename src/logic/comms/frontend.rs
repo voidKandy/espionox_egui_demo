@@ -13,8 +13,8 @@ pub struct FrontendComms {
 
 #[derive(Debug, Clone)]
 pub enum FrontendRequest {
-    Message(String),
-    DoneStreaming,
+    StreamToken { token: String, chat_name: String },
+    DoneStreaming { chat_name: String },
     NewChatThread(String),
 }
 

@@ -1,7 +1,7 @@
 use espionox::agent::{Agent, AgentSettings};
 
 use super::{BackendError, BackendSender};
-use crate::{comms::FrontendRequest, logic::comms::BackendCommand};
+use crate::logic::comms::{BackendCommand, FrontendRequest};
 use std::sync::Arc;
 use tokio::{
     sync::{mpsc, Mutex},
@@ -9,12 +9,13 @@ use tokio::{
 };
 
 #[derive(Debug)]
-pub(super) struct ChatAgentThread {
+pub struct ChatAgentThread {
     handle: Option<JoinHandle<()>>,
-    name: String,
+    pub name: String,
     settings: AgentSettings,
-    pub(super) sender: Option<mpsc::Sender<String>>,
+    pub sender: Option<mpsc::Sender<String>>,
     outer_sender: Arc<BackendSender>,
+    // receiver: Option<mpsc::Receiver<String>>,
 }
 
 #[derive(Debug, Clone)]
@@ -32,6 +33,7 @@ impl ChatAgentThread {
             settings,
             sender: None,
             outer_sender,
+            // receiver: None,
         };
         agent_thread.spawn_chat_thread()?;
         Ok(agent_thread)
@@ -44,12 +46,14 @@ impl ChatAgentThread {
         let outer_sender = Arc::clone(&self.outer_sender);
         let mut agent = Agent::build(self.settings.to_owned()).expect("Failed to build agent");
         tracing::info!("Listening on {} agent thread...", self.name);
+        let chat_name = self.name.to_string();
         let handle = tokio::spawn(async move {
             loop {
                 match rx.try_recv() {
                     Ok(prompt) => {
                         tracing::info!("Prompt received on agent thread...");
                         Self::handle_completion_stream(
+                            chat_name.clone(),
                             prompt,
                             &mut agent,
                             Arc::clone(&outer_sender),
@@ -74,6 +78,7 @@ impl ChatAgentThread {
     }
 
     async fn handle_completion_stream(
+        chat_name: String,
         prompt: String,
         agent: &mut Agent,
         sender: Arc<BackendSender>,
@@ -83,20 +88,25 @@ impl ChatAgentThread {
             .await
             .map_err(|err| BackendError::Unexpected(err.into()))?;
         let mut full_message = vec![];
-        while let Ok(Some(token)) = stream_receiver.receive().await {
-            tracing::info!("Sending Token: {}", token);
+        while let Ok(Some(token_response)) = stream_receiver.receive().await {
+            tracing::info!("Sending Token: {}", token_response);
+            let token = token_response.to_owned();
+            let chat_name = chat_name.to_owned();
             sender
-                .send(FrontendRequest::Message(token.to_owned()).to_owned())
+                .send(FrontendRequest::StreamToken { token, chat_name })
                 .await
                 .unwrap();
-            full_message.push(token.to_owned());
+            full_message.push(token_response.to_owned());
         }
         agent
             .context
             .push_to_buffer("assistant", full_message.join(""));
         full_message.clear();
 
-        sender.send(FrontendRequest::DoneStreaming).await.unwrap();
+        sender
+            .send(FrontendRequest::DoneStreaming { chat_name })
+            .await
+            .unwrap();
         tracing::info!("processed all responses");
         Ok(())
     }

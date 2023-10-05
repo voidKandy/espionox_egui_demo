@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::logic::comms::{BackendCommand, FrontendComms, FrontendRequest};
 
 use super::egui;
@@ -132,6 +130,41 @@ impl ChatPage {
         }
     }
 
+    fn listen_for_chat_updates(&mut self, frontend: &FrontendComms, ctx: &egui::Context) {
+        if let Ok(response) = frontend.receiver.lock().unwrap().try_recv() {
+            tracing::info!("Frontend got response: {:?}", response);
+            match response {
+                FrontendRequest::DoneStreaming { chat_name } => {
+                    let chat = self
+                        .get_chat_by_name(&chat_name)
+                        .expect("Couldn't get chat with that name");
+                    if chat.current_exchange.stream_buffer.is_some() {
+                        chat.chat_buffer.as_mut().push(Message::new_standard(
+                            "assistant",
+                            &chat.current_exchange.stream_buffer.take().unwrap(),
+                        ));
+                        chat.processing_response = false;
+                    }
+                }
+                FrontendRequest::StreamToken { token, chat_name } => {
+                    let chat = self
+                        .get_chat_by_name(&chat_name)
+                        .expect("Couldn't get chat with that name");
+                    chat.current_exchange.push_to_stream_buffer(&token);
+                    tracing::info!(
+                        "Updated buffer: {}",
+                        chat.current_exchange.stream_buffer.clone().unwrap()
+                    );
+                    ctx.request_repaint();
+                }
+                FrontendRequest::NewChatThread(name) => {
+                    let new_chat = Chat::new(&name);
+                    self.chats.push(new_chat);
+                }
+            }
+        }
+    }
+
     fn init_chats(names: Vec<String>) -> Vec<Chat> {
         let mut vec = Vec::new();
         names.into_iter().for_each(|n| {
@@ -141,10 +174,8 @@ impl ChatPage {
         vec
     }
 
-    fn get_current_chat(&mut self) -> Option<&mut Chat> {
-        self.chats
-            .iter_mut()
-            .find(|ch| ch.name == self.current_chat_name)
+    fn get_chat_by_name(&mut self, name: &str) -> Option<&mut Chat> {
+        self.chats.iter_mut().find(|ch| ch.name == name)
     }
 
     pub fn display_current_chat(&mut self, frontend: &FrontendComms, outer_ui: &mut egui::Ui) {
@@ -156,12 +187,7 @@ impl ChatPage {
             );
         }
 
-        if let Ok(FrontendRequest::NewChatThread(name)) =
-            frontend.receiver.try_lock().unwrap().try_recv()
-        {
-            let new_chat = Chat::new(&name);
-            self.chats.push(new_chat);
-        }
+        self.listen_for_chat_updates(frontend, outer_ui.ctx());
 
         SidePanel::new(egui::panel::Side::Left, "ChatsPanel")
             .resizable(false)
@@ -184,8 +210,9 @@ impl ChatPage {
                     });
                 }
             });
-
-        let chat = self.get_current_chat().unwrap();
+        let chat = self
+            .get_chat_by_name(&self.current_chat_name.to_owned())
+            .unwrap();
         chat.display(frontend, outer_ui);
     }
 }
@@ -237,8 +264,11 @@ impl Chat {
                                 "user",
                                 self.current_exchange.user_input.as_str(),
                             ));
+                            // self.thread_sender
+                            //     .try_send(self.current_exchange.user_input)
+                            //     .expect("Failed to send to backend chat thread");
+                            // self.current_exchange.user_input.clear();
                             self.send_last_user_message_to_backend(frontend, outer_ui.ctx());
-
                             self.processing_response = true;
                         }
                     }
@@ -273,7 +303,7 @@ impl Chat {
                         .interactive(false);
                     ui.add_sized([chat_width, chat_height], model_output);
                 }
-                self.update_stream_buffer_with_backend_response(frontend, ui.ctx());
+                // self.update_stream_buffer_with_backend_response(frontend, ui.ctx());
                 ui.ctx().request_repaint();
 
                 if scroll_to_bottom {
@@ -284,35 +314,35 @@ impl Chat {
         });
     }
 
-    fn update_stream_buffer_with_backend_response(
-        &mut self,
-        frontend: &FrontendComms,
-        ctx: &egui::Context,
-    ) {
-        if let Ok(response) = frontend.receiver.lock().unwrap().try_recv() {
-            tracing::info!("Frontend got response: {:?}", response);
-            match response {
-                FrontendRequest::DoneStreaming => {
-                    if self.current_exchange.stream_buffer.is_some() {
-                        self.chat_buffer.as_mut().push(Message::new_standard(
-                            "assistant",
-                            &self.current_exchange.stream_buffer.take().unwrap(),
-                        ));
-                        self.processing_response = false;
-                    }
-                }
-                FrontendRequest::Message(token) => {
-                    self.current_exchange.push_to_stream_buffer(&token);
-                    tracing::info!(
-                        "Updated buffer: {}",
-                        self.current_exchange.stream_buffer.clone().unwrap()
-                    );
-                    ctx.request_repaint();
-                }
-                _ => {}
-            }
-        }
-    }
+    // fn update_stream_buffer_with_backend_response(
+    //     &mut self,
+    //     frontend: &FrontendComms,
+    //     ctx: &egui::Context,
+    // ) {
+    //     if let Ok(response) = frontend.receiver.lock().unwrap().try_recv() {
+    //         tracing::info!("Frontend got response: {:?}", response);
+    //         match response {
+    //             FrontendRequest::DoneStreaming => {
+    //                 if self.current_exchange.stream_buffer.is_some() {
+    //                     self.chat_buffer.as_mut().push(Message::new_standard(
+    //                         "assistant",
+    //                         &self.current_exchange.stream_buffer.take().unwrap(),
+    //                     ));
+    //                     self.processing_response = false;
+    //                 }
+    //             }
+    //             FrontendRequest::StreamToken { token, chat_name } => {
+    //                 self.current_exchange.push_to_stream_buffer(&token);
+    //                 tracing::info!(
+    //                     "Updated buffer: {}",
+    //                     self.current_exchange.stream_buffer.clone().unwrap()
+    //                 );
+    //                 ctx.request_repaint();
+    //             }
+    //             _ => {}
+    //         }
+    //     }
+    // }
 
     fn send_last_user_message_to_backend(&mut self, frontend: &FrontendComms, ctx: &egui::Context) {
         ctx.request_repaint();
