@@ -15,7 +15,6 @@ use espionox::{
         Message, MessageVector,
     },
 };
-use tokio::sync::oneshot::error;
 
 #[derive(Debug)]
 pub struct Chat {
@@ -23,11 +22,12 @@ pub struct Chat {
     chat_buffer: MessageVector,
     current_exchange: CurrentExchange,
     processing_response: bool,
+    error_message: Option<String>,
 }
 
 #[derive(Debug)]
 pub struct ChatPage {
-    current_chat_name: String,
+    current_chat_name: Option<String>,
     chats: Vec<Chat>,
     create_new_chat_modal_open: bool,
     create_chat_modal: CreateNewChatModal,
@@ -45,7 +45,7 @@ pub struct CreateNewChatModal {
     init_prompt: String,
     selected_stm: ShortTermMemory,
     selected_ltm: LongTermMemory,
-    error_message: String,
+    error_message: Option<String>,
 }
 
 impl Default for CreateNewChatModal {
@@ -55,7 +55,7 @@ impl Default for CreateNewChatModal {
             init_prompt: String::new(),
             selected_stm: ShortTermMemory::default(),
             selected_ltm: LongTermMemory::default(),
-            error_message: String::new(),
+            error_message: None,
         }
     }
 }
@@ -90,9 +90,11 @@ impl CreateNewChatModal {
 }
 
 impl ChatPage {
-    pub fn init(agent_names: &Vec<String>) -> Self {
-        let current_chat_name = agent_names[0].to_owned();
-        let chats = Self::init_chats(agent_names.to_vec());
+    pub fn init() -> Self {
+        // let current_chat_name = agent_names[0].to_owned();
+        // let chats = Self::init_chats(agent_names.to_vec());
+        let chats = vec![];
+        let current_chat_name = None;
         Self {
             current_chat_name,
             chats,
@@ -104,40 +106,40 @@ impl ChatPage {
     fn display_modal(&mut self, ui: &mut egui::Ui, frontend: &FrontendComms) {
         let existing_names = self.all_chat_names();
         let modal = &mut self.create_chat_modal;
+
+        let mut create_new_chat_modal_open = self.create_new_chat_modal_open;
         egui::Window::new("Create New Chats")
-            .open(&mut self.create_new_chat_modal_open)
+            .open(&mut create_new_chat_modal_open)
             .resizable(false)
             .movable(false)
             .collapsible(false)
             .anchor(Align2::RIGHT_TOP, [-5.0, -5.0])
             .show(ui.ctx(), |ui| {
-                // let mut stm = &modal.selected_stm;
                 ui.add(
                     egui::TextEdit::singleline(&mut modal.chat_name)
                         .hint_text("Put a chat name here"),
                 );
                 ui.label("Short Term Memory");
-                ui.radio_value(&mut modal.selected_stm, ShortTermMemory::Forget, "No STM");
+                ui.radio_value(&mut modal.selected_stm, ShortTermMemory::Forget, "None");
                 ui.radio_value(
                     &mut modal.selected_stm,
                     ShortTermMemory::Cache(MemoryCache::default()),
                     "Cached Memory",
                 );
                 ui.label("Long Term Memory");
-                ui.radio_value(&mut modal.selected_ltm, LongTermMemory::None, "No LTM");
+                ui.radio_value(&mut modal.selected_ltm, LongTermMemory::None, "None");
                 let init_prompt_te = egui::TextEdit::multiline(&mut modal.init_prompt)
                     .hint_text("Put your desired system prompt here");
                 let _ = ui.add(init_prompt_te);
-                let error_message = &modal.error_message;
-                if !error_message.is_empty() {
-                    ui.colored_label(Color32::RED, error_message);
+                if modal.error_message.is_some() {
+                    ui.colored_label(Color32::RED, modal.error_message.as_ref().unwrap());
                 }
                 if ui.button("Create New Chat").clicked() {
-                    if modal.chat_name.is_empty() {
-                        modal.error_message = "Please fill out the name field".to_string();
-                    }
-                    if existing_names.contains(&modal.chat_name) {
-                        modal.error_message = "Cannot create duplicate chat names".to_string();
+                    if modal.chat_name.trim().is_empty() {
+                        modal.error_message = Some("Please fill out the name field".to_string());
+                    } else if existing_names.contains(&modal.chat_name) {
+                        modal.error_message =
+                            Some("Cannot create duplicate chat names".to_string());
                     } else {
                         let name = &modal.chat_name;
                         let name = name.to_string();
@@ -148,8 +150,8 @@ impl ChatPage {
                             .try_send(create_command)
                             .expect("Failed to send chat creation command");
                         modal.clear();
+                        self.create_new_chat_modal_open = false;
                     }
-                    // *open = false;
                 }
             });
     }
@@ -162,12 +164,12 @@ impl ChatPage {
                     let chat = self
                         .get_chat_by_name(&chat_name)
                         .expect("Couldn't get chat with that name");
+                    chat.processing_response = false;
                     if chat.current_exchange.stream_buffer.is_some() {
                         chat.chat_buffer.as_mut().push(Message::new_standard(
                             "assistant",
                             &chat.current_exchange.stream_buffer.take().unwrap(),
                         ));
-                        chat.processing_response = false;
                     }
                 }
                 FrontendRequest::StreamToken { token, chat_name } => {
@@ -182,20 +184,14 @@ impl ChatPage {
                     ctx.request_repaint();
                 }
                 FrontendRequest::NewChatThread(chat_name) => {
-                    let new_chat = Chat::new(&chat_name);
+                    let new_chat = Chat::init(&chat_name);
+                    if self.current_chat_name.is_none() {
+                        self.current_chat_name = Some(chat_name);
+                    }
                     self.chats.push(new_chat);
                 }
             }
         }
-    }
-
-    fn init_chats(names: Vec<String>) -> Vec<Chat> {
-        let mut vec = Vec::new();
-        names.into_iter().for_each(|n| {
-            let chat = Chat::new(&n);
-            vec.push(chat);
-        });
-        vec
     }
 
     fn get_chat_by_name(&mut self, name: &str) -> Option<&mut Chat> {
@@ -213,6 +209,9 @@ impl ChatPage {
 
         self.listen_for_chat_updates(frontend, outer_ui.ctx());
 
+        let chat_names = self.all_chat_names().clone();
+        // let chats = &mut self.chats;
+
         SidePanel::new(egui::panel::Side::Left, "ChatsPanel")
             .resizable(false)
             .show(outer_ui.ctx(), |ui| {
@@ -223,42 +222,54 @@ impl ChatPage {
                 if ui.button(add_button_value).clicked() {
                     self.create_new_chat_modal_open = !self.create_new_chat_modal_open;
                 }
-                for name in self.chats.iter().map(|ch| &ch.name) {
-                    let is_selected = *name == self.current_chat_name;
+                for (i, name) in chat_names.iter().enumerate() {
+                    let is_selected = Some(name.to_string()) == self.current_chat_name;
                     ui.horizontal(|ui| {
                         if ui.radio(is_selected, name.to_string()).clicked() {
                             let new_chat_name = name.to_string();
-                            self.current_chat_name = new_chat_name;
+                            self.current_chat_name = Some(new_chat_name);
                         }
-                        if ui.small_button("❌").clicked() {
-                            egui::Window::new("SettingsWindow").show(ui.ctx(), |ui| {
-                                ui.label("Hello World!");
-                            });
+                        match i {
+                            0 => {}
+                            _ => {
+                                if ui.small_button("❌").clicked() {
+                                    let chat_to_remove_name = name.to_string();
+                                    let remove_command = BackendCommand::RemoveChatThread {
+                                        name: chat_to_remove_name.to_owned(),
+                                    };
+                                    frontend.sender.try_send(remove_command).unwrap();
+                                    if Some(chat_to_remove_name) == self.current_chat_name {
+                                        self.current_chat_name = Some(chat_names[0].to_owned())
+                                    }
+                                    self.chats.retain(|ch| &ch.name != name)
+                                }
+                            }
                         }
                     });
                 }
             });
-        let chat = self
-            .get_chat_by_name(&self.current_chat_name.to_owned())
-            .unwrap();
+        let current_chat_name = &self.current_chat_name.to_owned().unwrap();
+        let chat = self.get_chat_by_name(current_chat_name).unwrap();
         chat.display(frontend, outer_ui);
     }
 }
 
 impl Chat {
-    pub fn new(name: &str) -> Self {
+    pub fn init(name: &str) -> Self {
         Self {
             name: name.to_string(),
             processing_response: false,
             chat_buffer: MessageVector::init(),
             current_exchange: CurrentExchange::default(),
+            error_message: None,
         }
     }
 
     pub fn display(&mut self, frontend: &FrontendComms, outer_ui: &mut egui::Ui) {
         let mut scroll_to_bottom = false;
+        let error_message = &mut self.error_message.clone();
 
-        egui::Window::new("My Window")
+        egui::Window::new("")
             .anchor(Align2::RIGHT_BOTTOM, [-5.0, -5.0])
             .auto_sized()
             .movable(false)
@@ -271,20 +282,27 @@ impl Chat {
                         .frame(false)
                         .hint_text("Send a message")
                         .vertical_align(eframe::emath::Align::BOTTOM);
+
+                if error_message.is_some() {
+                    ui.colored_label(Color32::RED, error_message.as_ref().unwrap());
+                }
+
                 let user_input_handle = ui.add(user_input_box);
 
                 let shift_enter_pressed = user_input_handle.has_focus()
                     && ui.input(|i| i.modifiers.shift_only() && i.key_pressed(egui::Key::Enter));
+                let submit_button_pressed = ui.button("Enter").clicked();
                 let enter_pressed_with_content = user_input_handle.has_focus()
                     && ui.input(|i| i.key_pressed(egui::Key::Enter))
                     && !self.current_exchange.user_input.trim().is_empty();
 
                 if shift_enter_pressed {
                     // Do nothing
-                } else if enter_pressed_with_content {
+                } else if enter_pressed_with_content || submit_button_pressed {
                     match self.processing_response {
                         true => {
-                            // SOmehow handle users trying to overwhelm the model
+                            *error_message =
+                                Some("Please wait until current response is processed".to_string());
                         }
                         false => {
                             scroll_to_bottom = true;
@@ -292,10 +310,6 @@ impl Chat {
                                 "user",
                                 self.current_exchange.user_input.as_str(),
                             ));
-                            // self.thread_sender
-                            //     .try_send(self.current_exchange.user_input)
-                            //     .expect("Failed to send to backend chat thread");
-                            // self.current_exchange.user_input.clear();
                             self.send_last_user_message_to_backend(frontend, outer_ui.ctx());
                             self.processing_response = true;
                         }

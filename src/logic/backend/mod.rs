@@ -28,7 +28,7 @@ impl std::fmt::Display for BackendError {
 }
 #[derive(Debug)]
 pub struct AppBackend {
-    pub agent_thread_names: Vec<String>,
+    // pub agent_thread_names: Vec<String>,
     agent_threads: Arc<RwLock<ChatThreadVector>>,
     main_thread: Option<BackendThread>,
     sender: Arc<BackendSender>,
@@ -41,11 +41,11 @@ impl AppBackend {
         receiver: mpsc::Receiver<BackendCommand>,
     ) -> Self {
         let sender = Arc::new(sender.into());
-        let (agent_threads, agent_thread_names) =
-            Self::create_default_agent_threads(Arc::clone(&sender));
+        let agent_threads = Self::init_default_agent_threads(Arc::clone(&sender))
+            .expect("Failed to init default threads");
         let agent_threads = Arc::new(agent_threads);
         let mut backend = Self {
-            agent_thread_names,
+            // agent_thread_names,
             agent_threads,
             main_thread: None,
             sender: sender.into(),
@@ -57,20 +57,24 @@ impl AppBackend {
         backend
     }
 
-    fn create_default_agent_threads(
+    fn init_default_agent_threads(
         sender: Arc<BackendSender>,
-    ) -> (RwLock<ChatThreadVector>, Vec<String>) {
-        let names = vec!["Default", "Default2"];
+    ) -> Result<RwLock<ChatThreadVector>, BackendError> {
+        let names = vec!["Chat Agent"];
         let settings = AgentSettings::default();
-        let agent_thread =
-            ChatAgentThread::new(names[0], settings.clone(), Arc::clone(&sender)).unwrap();
-        let agent_thread2 =
-            ChatAgentThread::new(names[1], settings.clone(), Arc::clone(&sender)).unwrap();
-        let agents = vec![agent_thread, agent_thread2];
-        (
-            RwLock::new(ChatThreadVector::from(agents)),
-            names.iter().map(|n| n.to_string()).collect(),
-        )
+        let agent_thread = ChatAgentThread::new(names[0], settings.clone(), Arc::clone(&sender));
+        let agents = vec![agent_thread];
+
+        for name in names.iter() {
+            let frontend_request = FrontendRequest::NewChatThread(name.to_string());
+            sender.try_send(frontend_request).map_err(|err| {
+                BackendError::Unexpected(anyhow::anyhow!(
+                    "Error sending command to agent thread: {:?}",
+                    err
+                ))
+            })?
+        }
+        Ok(RwLock::new(ChatThreadVector::from(agents)))
     }
 
     pub fn buffer(&self, agent: &Agent) -> anyhow::Result<Arc<MessageVector>> {
@@ -84,6 +88,11 @@ impl AppBackend {
         let agent_threads = Arc::clone(&self.agent_threads);
         let handle = tokio::spawn(async move {
             loop {
+                agent_threads
+                    .read()
+                    .await
+                    .spawn_threads_if_handleless()
+                    .await?;
                 if let Some(command) = receiver
                     .try_lock()
                     .expect("Failed to lock receiver")
@@ -93,9 +102,7 @@ impl AppBackend {
                         BackendCommand::NewChatThread { name, settings } => {
                             tracing::info!("Received command to create new chat thread: {}", name);
                             let new_thread =
-                                ChatAgentThread::new(&name, settings, Arc::clone(&outer_sender))
-                                    .unwrap();
-
+                                ChatAgentThread::new(&name, settings, Arc::clone(&outer_sender));
                             agent_threads.write().await.push(new_thread);
                             let frontend_request = FrontendRequest::NewChatThread(name);
                             outer_sender.send(frontend_request).await.map_err(|err| {
@@ -104,11 +111,6 @@ impl AppBackend {
                                     err
                                 ))
                             })?
-
-                            // Create easy function for adding agents to threads list
-                            // agent_threads_lock.insert(name, settings);
-                            // self.agent_settings.insert(name, settings);
-                            // Ok(())
                         }
                         BackendCommand::StreamedCompletion { agent_name, prompt } => {
                             let threads_lock = agent_threads.read().await;
@@ -127,9 +129,13 @@ impl AppBackend {
                                 tracing::warn!("Couldn't get sender from {} agent", agent_name);
                             }
                         }
+                        BackendCommand::RemoveChatThread { name } => {
+                            tracing::info!("Removing {} agent thread", name);
+                            agent_threads.write().await.remove_by_name(&name);
+                        }
                     };
                 } else {
-                    std::thread::sleep(std::time::Duration::from_secs(2));
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                 }
             }
         });

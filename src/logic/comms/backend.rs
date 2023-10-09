@@ -16,6 +16,9 @@ pub enum BackendCommand {
         name: String,
         settings: AgentSettings,
     },
+    RemoveChatThread {
+        name: String,
+    },
 }
 
 unsafe impl Send for BackendCommand {}

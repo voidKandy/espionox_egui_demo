@@ -30,7 +30,7 @@ impl Default for MainApplication {
         std::thread::spawn(move || {
             rt.block_on(async {
                 loop {
-                    tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
                 }
             })
         });
@@ -43,7 +43,7 @@ impl Default for MainApplication {
 
         Self {
             state: State::default(),
-            chat_page: ChatPage::init(&backend.agent_thread_names),
+            chat_page: ChatPage::init(),
             settings_page: SettingsPage::from(&backend),
             frontend,
             backend,
