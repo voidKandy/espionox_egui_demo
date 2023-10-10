@@ -3,6 +3,7 @@ use super::comms::{backend::*, FrontendRequest};
 use chat::{ChatAgentThread, ChatThreadVector};
 use espionox::{
     agent::{Agent, AgentSettings},
+    configuration::ConfigEnv,
     context::MessageVector,
 };
 use std::sync::Arc;
@@ -60,10 +61,20 @@ impl AppBackend {
     fn init_default_agent_threads(
         sender: Arc<BackendSender>,
     ) -> Result<RwLock<ChatThreadVector>, BackendError> {
-        let names = vec!["Chat Agent"];
-        let settings = AgentSettings::default();
-        let agent_thread = ChatAgentThread::new(names[0], settings.clone(), Arc::clone(&sender));
-        let agents = vec![agent_thread];
+        let names = vec!["Chat Agent", "Long Term Agent"];
+        let st_settings = AgentSettings::default();
+        let st_agent_thread =
+            ChatAgentThread::new(names[0], st_settings.to_owned(), Arc::clone(&sender));
+
+        let lt_settings = AgentSettings::new()
+            .long_term_env(ConfigEnv::default(), Some("EguiLongTerm"))
+            .short_term(espionox::context::short_term::ShortTermMemory::new_cache())
+            .build_buffer_from(espionox::context::MemoryVariant::LongTerm)
+            .finish();
+        let lt_agent_thread =
+            ChatAgentThread::new(names[1], lt_settings.to_owned(), Arc::clone(&sender));
+
+        let agents = vec![st_agent_thread, lt_agent_thread];
 
         for name in names.iter() {
             let frontend_request = FrontendRequest::NewChatThread(name.to_string());
