@@ -1,8 +1,13 @@
 version: '3'
 services:
-  postgres:
-    image: voidkandy/espionox-image:master
-    env_file: .env
-    # command: sh -c 'export DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${HOST}:${PORT}/${POSTGRES_DB} && your-app-binary'
+  db:
+    image: voidkandy/espionox-image:latest
+    environment:
+      - HOST=${DB_HOST}
+      - PORT=${DB_PORT}
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
+      - RESET_DB=true
     ports:
-      - "${PORT}:${PORT}"
+      - "${DB_PORT}:5432"
