@@ -1,14 +1,7 @@
 pub mod chat;
 use super::comms::{backend::*, FrontendRequest};
 use chat::{ChatAgentThread, ChatThreadVector};
-<<<<<<< Updated upstream
-use espionox::{
-    agent::{Agent, AgentSettings},
-    context::MessageVector,
-};
-=======
 use espionox::{agent::Agent, context::memory::Memory};
->>>>>>> Stashed changes
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex, RwLock};
 
@@ -64,12 +57,6 @@ impl AppBackend {
     fn init_default_agent_threads(
         sender: Arc<BackendSender>,
     ) -> Result<RwLock<ChatThreadVector>, BackendError> {
-<<<<<<< Updated upstream
-        let names = vec!["Chat Agent"];
-        let settings = AgentSettings::default();
-        let agent_thread = ChatAgentThread::new(names[0], settings.clone(), Arc::clone(&sender));
-        let agents = vec![agent_thread];
-=======
         let names = vec!["Chat Agent", "Long Term Agent"];
         let st_agent_thread = ChatAgentThread::new(names[0], Agent::default(), Arc::clone(&sender));
 
@@ -82,7 +69,6 @@ impl AppBackend {
             ChatAgentThread::new(names[1], lt_agent.to_owned(), Arc::clone(&sender));
 
         let agents = vec![st_agent_thread, lt_agent_thread];
->>>>>>> Stashed changes
 
         for name in names.iter() {
             let frontend_request = FrontendRequest::NewChatThread(name.to_string());
