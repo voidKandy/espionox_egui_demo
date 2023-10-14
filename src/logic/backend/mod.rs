@@ -1,10 +1,14 @@
 pub mod chat;
 use super::comms::{backend::*, FrontendRequest};
 use chat::{ChatAgentThread, ChatThreadVector};
+<<<<<<< Updated upstream
 use espionox::{
     agent::{Agent, AgentSettings},
     context::MessageVector,
 };
+=======
+use espionox::{agent::Agent, context::memory::Memory};
+>>>>>>> Stashed changes
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex, RwLock};
 
@@ -60,10 +64,25 @@ impl AppBackend {
     fn init_default_agent_threads(
         sender: Arc<BackendSender>,
     ) -> Result<RwLock<ChatThreadVector>, BackendError> {
+<<<<<<< Updated upstream
         let names = vec!["Chat Agent"];
         let settings = AgentSettings::default();
         let agent_thread = ChatAgentThread::new(names[0], settings.clone(), Arc::clone(&sender));
         let agents = vec![agent_thread];
+=======
+        let names = vec!["Chat Agent", "Long Term Agent"];
+        let st_agent_thread = ChatAgentThread::new(names[0], Agent::default(), Arc::clone(&sender));
+
+        let ltm = Memory::build().long_term_thread(names[1]).finished();
+        let lt_agent = Agent {
+            memory: ltm,
+            ..Default::default()
+        };
+        let lt_agent_thread =
+            ChatAgentThread::new(names[1], lt_agent.to_owned(), Arc::clone(&sender));
+
+        let agents = vec![st_agent_thread, lt_agent_thread];
+>>>>>>> Stashed changes
 
         for name in names.iter() {
             let frontend_request = FrontendRequest::NewChatThread(name.to_string());
@@ -77,10 +96,10 @@ impl AppBackend {
         Ok(RwLock::new(ChatThreadVector::from(agents)))
     }
 
-    pub fn buffer(&self, agent: &Agent) -> anyhow::Result<Arc<MessageVector>> {
-        let buffer = Arc::new(agent.context.buffer().to_owned());
-        Ok(buffer)
-    }
+    // pub fn buffer(&self, agent: &Agent) -> anyhow::Result<Arc<MessageVector>> {
+    //     let buffer = Arc::new(agent.memory.buffer().to_owned());
+    //     Ok(buffer)
+    // }
 
     pub fn spawn_main_thread(&mut self) -> Result<(), BackendError> {
         let receiver = Arc::clone(&self.receiver);
@@ -99,10 +118,10 @@ impl AppBackend {
                     .receive_command()?
                 {
                     match command {
-                        BackendCommand::NewChatThread { name, settings } => {
+                        BackendCommand::NewChatThread { name, agent } => {
                             tracing::info!("Received command to create new chat thread: {}", name);
                             let new_thread =
-                                ChatAgentThread::new(&name, settings, Arc::clone(&outer_sender));
+                                ChatAgentThread::new(&name, agent, Arc::clone(&outer_sender));
                             agent_threads.write().await.push(new_thread);
                             let frontend_request = FrontendRequest::NewChatThread(name);
                             outer_sender.send(frontend_request).await.map_err(|err| {

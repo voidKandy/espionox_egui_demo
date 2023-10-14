@@ -1,4 +1,4 @@
-use espionox::agent::{Agent, AgentSettings};
+use espionox::{agent::Agent, context::memory::Memory, language_models::LanguageModel};
 
 use super::{BackendError, BackendSender};
 use crate::logic::comms::FrontendRequest;
@@ -12,21 +12,44 @@ use tokio::{
 pub struct ChatAgentThread {
     handle: Option<JoinHandle<()>>,
     pub name: String,
-    settings: AgentSettings,
+    agent_construct: Option<AgentConstructor>,
     pub sender: Option<mpsc::Sender<String>>,
     outer_sender: Arc<BackendSender>,
     // receiver: Option<mpsc::Receiver<String>>,
 }
 
 #[derive(Debug, Clone)]
+struct AgentConstructor {
+    memory: Memory,
+    model: LanguageModel,
+}
+
+impl From<Agent> for AgentConstructor {
+    fn from(value: Agent) -> Self {
+        let memory = value.memory;
+        let model = value.model;
+        Self { memory, model }
+    }
+}
+
+impl Into<Agent> for AgentConstructor {
+    fn into(self) -> Agent {
+        Agent {
+            memory: self.memory,
+            model: self.model,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub(super) struct ChatThreadVector(Vec<Arc<Mutex<ChatAgentThread>>>);
 
 impl ChatAgentThread {
-    pub fn new(name: &str, settings: AgentSettings, outer_sender: Arc<BackendSender>) -> Self {
+    pub fn new(name: &str, agent: Agent, outer_sender: Arc<BackendSender>) -> Self {
         let agent_thread = ChatAgentThread {
             handle: None,
             name: name.to_string(),
-            settings,
+            agent_construct: Some(agent.into()),
             sender: None,
             outer_sender,
         };
@@ -48,9 +71,10 @@ impl ChatAgentThread {
         self.sender = Some(tx);
         tracing::info!("Set sender for {} agent thread", self.name);
         let outer_sender = Arc::clone(&self.outer_sender);
-        let mut agent = Agent::build(self.settings.to_owned()).expect("Failed to build agent");
         let chat_name = self.name.to_string();
+        let agent_const = self.agent_construct.take();
         let handle = tokio::spawn(async move {
+            let mut agent = agent_const.unwrap().into();
             loop {
                 tracing::info!("Listening on {} agent thread...", &chat_name);
                 match rx.try_recv() {
@@ -104,8 +128,9 @@ impl ChatAgentThread {
             full_message.push(token_response.to_owned());
         }
         agent
-            .context
-            .push_to_buffer("assistant", full_message.join(""));
+            .memory
+            .push_to_message_cache("assistant", full_message.join(""))
+            .await;
         full_message.clear();
 
         sender
