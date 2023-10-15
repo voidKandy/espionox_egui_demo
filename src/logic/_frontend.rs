@@ -90,6 +90,7 @@ impl AppFrontend {
         let x = INITAL_WINDOW_SIZE.0 - (INITAL_WINDOW_SIZE.0 / 4.0);
         let y = INITAL_WINDOW_SIZE.1 - (INITAL_WINDOW_SIZE.1 * 0.15);
         egui::Window::new("")
+            .id(Id::new("user_input_window"))
             .title_bar(false)
             .default_pos((x, y))
             .resizable(false)

@@ -1,11 +1,11 @@
-// use super::modals::AgentInfoModal;
+use super::modals::AgentInfoModal;
 use crate::logic::comms::{BackendCommand, FrontendComms, FrontendRequest};
 use espionox::context::memory::{Message, MessageRole, MessageVector, ToMessage};
 
 use super::egui;
 
 use eframe::{
-    egui::{CentralPanel, SidePanel},
+    egui::{CentralPanel, Id, SidePanel},
     emath::Align2,
     epaint::Color32,
 };
@@ -24,7 +24,7 @@ pub struct ChatPage {
     current_chat_name: Option<String>,
     chats: Vec<Chat>,
     create_new_chat_modal_open: bool,
-    // create_chat_modal: AgentInfoModal,
+    agent_info_modal: AgentInfoModal,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -32,6 +32,7 @@ pub struct CurrentExchange {
     pub user_input: String,
     pub stream_buffer: Option<String>,
 }
+
 impl CurrentExchange {
     fn push_to_stream_buffer(&mut self, token: &str) {
         match &mut self.stream_buffer {
@@ -44,6 +45,7 @@ impl CurrentExchange {
         }
     }
 }
+
 impl ChatPage {
     pub fn init() -> Self {
         // let current_chat_name = agent_names[0].to_owned();
@@ -54,8 +56,31 @@ impl ChatPage {
             current_chat_name,
             chats,
             create_new_chat_modal_open: false,
-            // create_chat_modal: AgentInfoModal::default(),
+            agent_info_modal: AgentInfoModal::new_empty(),
         }
+    }
+
+    // MAKE THIS TAKE  TRAIT WHICH HAS  METHODS:
+    // * Display_form()
+    // * window_name() -> String
+    pub fn display_modal_window(
+        &mut self,
+        ui: &mut egui::Ui,
+        frontend: &FrontendComms,
+        open: &mut bool,
+    ) {
+        // let existing_names = self.all_chat_names();
+        let modal = &mut self.agent_info_modal;
+        egui::Window::new("")
+            .title_bar(false)
+            .open(open)
+            .resizable(false)
+            .movable(false)
+            .collapsible(false)
+            .anchor(Align2::RIGHT_TOP, [-5.0, -5.0])
+            .show(ui.ctx(), |ui| {
+                modal.display_form(ui, frontend);
+            });
     }
 
     fn listen_for_chat_updates(&mut self, frontend: &FrontendComms, ctx: &egui::Context) {
@@ -108,9 +133,10 @@ impl ChatPage {
     }
 
     pub fn display_current_chat(&mut self, frontend: &FrontendComms, outer_ui: &mut egui::Ui) {
-        // if self.create_new_chat_modal_open {
-        //     self.display_modal(outer_ui, frontend);
-        // }
+        let mut open_modal = self.create_new_chat_modal_open;
+        if open_modal {
+            self.display_modal_window(outer_ui, frontend, &mut open_modal);
+        }
 
         self.listen_for_chat_updates(frontend, outer_ui.ctx());
 
@@ -175,6 +201,7 @@ impl Chat {
         let error_message = &mut self.error_message.clone();
 
         egui::Window::new("")
+            .id(Id::new("chat_window"))
             .anchor(Align2::RIGHT_BOTTOM, [-5.0, -5.0])
             .auto_sized()
             .movable(false)
