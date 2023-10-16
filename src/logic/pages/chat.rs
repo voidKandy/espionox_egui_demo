@@ -5,9 +5,9 @@ use espionox::context::memory::{Message, MessageRole, MessageVector, ToMessage};
 use super::egui;
 
 use eframe::{
-    egui::{CentralPanel, Id, SidePanel},
+    egui::{CentralPanel, Id, Layout, RichText, Separator, SidePanel},
     emath::Align2,
-    epaint::Color32,
+    epaint::{Color32, FontId},
 };
 
 #[derive(Debug)]
@@ -67,18 +67,28 @@ impl ChatPage {
         &mut self,
         ui: &mut egui::Ui,
         frontend: &FrontendComms,
-        open: &mut bool,
+        mut open: bool,
     ) {
         // let existing_names = self.all_chat_names();
         let modal = &mut self.agent_info_modal;
-        egui::Window::new("")
+        egui::Window::new("Agent Info")
             .title_bar(false)
-            .open(open)
+            .open(&mut open)
             .resizable(false)
-            .movable(false)
             .collapsible(false)
-            .anchor(Align2::RIGHT_TOP, [-5.0, -5.0])
+            .anchor(Align2::CENTER_CENTER, [-10.0, 0.0])
             .show(ui.ctx(), |ui| {
+                let ui_width = ui.max_rect().width() / 2.0;
+                ui.set_max_width(ui_width);
+                ui.vertical_centered(|ui| {
+                    ui.colored_label(
+                        Color32::LIGHT_BLUE,
+                        RichText::new("Agent Info")
+                            .font(FontId::proportional(18.0))
+                            .strong(),
+                    );
+                });
+                ui.add(Separator::default().horizontal());
                 modal.display_form(ui, frontend);
             });
     }
@@ -133,9 +143,9 @@ impl ChatPage {
     }
 
     pub fn display_current_chat(&mut self, frontend: &FrontendComms, outer_ui: &mut egui::Ui) {
-        let mut open_modal = self.create_new_chat_modal_open;
+        let open_modal = self.create_new_chat_modal_open;
         if open_modal {
-            self.display_modal_window(outer_ui, frontend, &mut open_modal);
+            self.display_modal_window(outer_ui, frontend, open_modal);
         }
 
         self.listen_for_chat_updates(frontend, outer_ui.ctx());
