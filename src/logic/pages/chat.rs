@@ -1,3 +1,5 @@
+use std::{cell::RefCell, thread, time::Duration};
+
 use super::modals::AgentInfoModal;
 use crate::logic::comms::{BackendCommand, FrontendComms, FrontendRequest};
 use espionox::context::memory::{Message, MessageRole, MessageVector, ToMessage};
@@ -63,17 +65,11 @@ impl ChatPage {
     // MAKE THIS TAKE  TRAIT WHICH HAS  METHODS:
     // * Display_form()
     // * window_name() -> String
-    pub fn display_modal_window(
-        &mut self,
-        ui: &mut egui::Ui,
-        frontend: &FrontendComms,
-        mut open: bool,
-    ) {
+    pub fn display_new_chat_modal(&mut self, ui: &mut egui::Ui, frontend: &FrontendComms) {
         // let existing_names = self.all_chat_names();
         let modal = &mut self.agent_info_modal;
-        egui::Window::new("Agent Info")
+        egui::Window::new("New Chat")
             .title_bar(false)
-            .open(&mut open)
             .resizable(false)
             .collapsible(false)
             .anchor(Align2::CENTER_CENTER, [-10.0, 0.0])
@@ -87,9 +83,19 @@ impl ChatPage {
                             .font(FontId::proportional(18.0))
                             .strong(),
                     );
+                    if ui.button("+").clicked() {
+                        if let Ok(new_thread_command) = modal.try_into() {
+                            frontend.sender.try_send(new_thread_command).unwrap();
+                            *modal = AgentInfoModal::new_empty();
+                            self.create_new_chat_modal_open = false;
+                        }
+                    };
                 });
                 ui.add(Separator::default().horizontal());
-                modal.display_form(ui, frontend);
+                if let Some(err_mess) = &modal.error_message {
+                    ui.colored_label(Color32::RED, err_mess);
+                }
+                modal.display_agent_form(ui);
             });
     }
 
@@ -145,24 +151,20 @@ impl ChatPage {
     pub fn display_current_chat(&mut self, frontend: &FrontendComms, outer_ui: &mut egui::Ui) {
         let open_modal = self.create_new_chat_modal_open;
         if open_modal {
-            self.display_modal_window(outer_ui, frontend, open_modal);
+            self.display_new_chat_modal(outer_ui, frontend);
         }
 
         self.listen_for_chat_updates(frontend, outer_ui.ctx());
 
         let chat_names = self.all_chat_names().clone();
-        // let chats = &mut self.chats;
 
         SidePanel::new(egui::panel::Side::Left, "ChatsPanel")
             .resizable(false)
             .show(outer_ui.ctx(), |ui| {
-                let add_button_value = match self.create_new_chat_modal_open {
-                    true => "➖",
-                    false => "➕",
-                };
-                if ui.button(add_button_value).clicked() {
-                    self.create_new_chat_modal_open = !self.create_new_chat_modal_open;
-                }
+                // let add_button_value = match self.create_new_chat_modal_open {
+                //     true => "➖",
+                //     false => "➕",
+                // };
                 for (i, name) in chat_names.iter().enumerate() {
                     let is_selected = Some(name.to_string()) == self.current_chat_name;
                     ui.horizontal(|ui| {
@@ -170,6 +172,20 @@ impl ChatPage {
                             let new_chat_name = name.to_string();
                             self.current_chat_name = Some(new_chat_name);
                         }
+                        // FUTURE FEATURE: CHANGING AGENTS
+                        // if ui.small_button("≡").clicked() {
+                        //     // Method for returning agent reference from backend command??
+                        //     let get_agent_reference_command = BackendCommand::AgentRef { name };
+                        //     frontend
+                        //         .sender
+                        //         .try_send(get_agent_reference_command)
+                        //         .unwrap();
+                        //     thread::sleep(Duration::from_millis(200));
+                        //     if let Some(response) = frontend.recv() {
+                        //         let agent = response.into();
+                        //         self.agent_info_modal = AgentInfoModal::from(agent, name);
+                        //     }
+                        // }
                         match i {
                             0 => {}
                             _ => {
@@ -187,6 +203,10 @@ impl ChatPage {
                             }
                         }
                     });
+                }
+                ui.add_space(10.0);
+                if ui.button("➕").clicked() {
+                    self.create_new_chat_modal_open = !self.create_new_chat_modal_open;
                 }
             });
         let current_chat_name = &self.current_chat_name.to_owned().unwrap();
