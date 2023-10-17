@@ -1,0 +1,13 @@
+version: '3'
+services:
+  db:
+    image: voidkandy/espionox-image:latest
+    environment:
+      - HOST=${DB_HOST}
+      - PORT=${DB_PORT}
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
+      - RESET_DB=true
+    ports:
+      - "${DB_PORT}:5432"
