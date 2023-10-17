@@ -79,11 +79,11 @@ impl ChatPage {
                 ui.vertical_centered(|ui| {
                     ui.colored_label(
                         Color32::LIGHT_BLUE,
-                        RichText::new("Agent Info")
+                        RichText::new("New Chat")
                             .font(FontId::proportional(18.0))
                             .strong(),
                     );
-                    if ui.button("+").clicked() {
+                    if ui.small_button("create").clicked() {
                         if let Ok(new_thread_command) = modal.try_into() {
                             frontend.sender.try_send(new_thread_command).unwrap();
                             *modal = AgentInfoModal::new_empty();
