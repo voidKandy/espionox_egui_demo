@@ -269,7 +269,6 @@ impl Chat {
 
             // ui.add(model_output);
             ui.add_sized([chat_width, chat_height], model_output);
-            ui.spinner();
         }
         ui.ctx().request_repaint();
     }
@@ -299,13 +298,21 @@ impl Chat {
                     }
 
                     let user_input_handle = ui.add(user_input_box);
-                    let enter_button = ui.button("⮊");
+
+                    let enter_button = egui::Button::new("⮊");
+                    let enter_button_handle = match self.processing_response {
+                        true => ui.spinner(),
+                        false => ui
+                            .add(enter_button)
+                            .on_hover_text("Right click for more options")
+                            .context_menu(|ui| if ui.button("Add File").clicked() {}),
+                    };
 
                     let shift_enter_pressed = user_input_handle.has_focus()
                         && ui
                             .input(|i| i.modifiers.shift_only() && i.key_pressed(egui::Key::Enter));
 
-                    let submit_button_pressed = enter_button.clicked();
+                    let submit_button_pressed = enter_button_handle.clicked();
 
                     let enter_pressed_with_content = user_input_handle.has_focus()
                         && ui.input(|i| i.key_pressed(egui::Key::Enter))
