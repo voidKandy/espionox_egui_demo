@@ -7,7 +7,8 @@ use std::{cell::RefCell, rc::Rc};
 
 #[derive(Debug)]
 pub struct InitPromptUi {
-    loaded_prompts_option: Option<Vec<Prompt>>,
+    loaded_prompts: Option<Vec<Prompt>>,
+    show_loaded_prompts: bool,
     messages: MessageVector,
     current_message_idx: usize,
     current_message_content: String,
@@ -25,8 +26,13 @@ impl From<MessageVector> for InitPromptUi {
             .unwrap()
             .to_string();
         let current_message_role = value.as_ref()[current_message_idx].role();
+        let loaded_prompts = match get_prompts_from_file() {
+            Ok(p) => Some(p),
+            Err(_) => None,
+        };
         Self {
-            loaded_prompts_option: None,
+            loaded_prompts,
+            show_loaded_prompts: false,
             messages: value,
             current_message_idx,
             current_message_content,
@@ -38,10 +44,6 @@ impl From<MessageVector> for InitPromptUi {
 impl InitPromptUi {
     pub fn init_prompt(&self) -> &MessageVector {
         &self.messages
-    }
-
-    fn current_message(&mut self) -> &mut Message {
-        &mut self.messages.as_mut()[self.current_message_idx]
     }
 
     fn save_current(&mut self) {
@@ -87,16 +89,22 @@ impl InitPromptUi {
             .is_some()
     }
 
+    fn mutate_with_prompt(&mut self, prompt: Prompt) {
+        let messages: MessageVector = prompt.messages.into();
+        *self = Self::from(messages);
+    }
+
     pub fn display_saved_prompt_options(&mut self, ui: &mut egui::Ui) {
-        let prompts: Vec<Prompt> = self.loaded_prompts_option.clone().unwrap();
-        tracing::info!("Prompts loaded:{:?}", prompts);
         ui.with_layout(Layout::top_down(eframe::emath::Align::Min), |ui| {
-            for p in prompts {
-                if ui.button(p.name).clicked() {
-                    let vec = MessageVector::from(p.messages);
-                    *self = InitPromptUi::from(vec);
-                    self.loaded_prompts_option = None;
+            if let Some(vec) = self.loaded_prompts.take() {
+                for p in vec.iter() {
+                    if ui.button(&p.name).clicked() {
+                        self.mutate_with_prompt(p.clone());
+                        self.show_loaded_prompts = false;
+                        break;
+                    }
                 }
+                self.loaded_prompts = Some(vec);
             }
         });
     }
@@ -116,15 +124,8 @@ impl InitPromptUi {
             let has_next = &prompt_ui.has_next();
 
             if ui.small_button("Load").clicked() {
-                match prompt_ui.loaded_prompts_option {
-                    Some(_) => prompt_ui.loaded_prompts_option = None,
-                    None => {
-                        let prompts = get_prompts_from_file().unwrap();
-                        prompt_ui.loaded_prompts_option = Some(prompts);
-                    }
-                }
+                prompt_ui.show_loaded_prompts = !prompt_ui.show_loaded_prompts;
             }
-
             ui.add_enabled_ui(*has_last, |ui| {
                 if ui.add(last_button).clicked() {
                     prompt_ui.change_idx(-1);
@@ -194,7 +195,7 @@ impl InitPromptUi {
                 });
             });
 
-            if let Some(_) = &prompt_ui.loaded_prompts_option {
+            if prompt_ui.show_loaded_prompts {
                 prompt_ui.display_saved_prompt_options(ui);
             }
         });

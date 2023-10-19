@@ -167,10 +167,29 @@ impl ChatPage {
                     true => "➖",
                     false => "➕",
                 };
-                for (i, name) in chat_names.iter().enumerate() {
+
+                for name in chat_names.iter() {
                     let is_selected = Some(name.to_string()) == self.current_chat_name;
                     ui.horizontal(|ui| {
-                        if ui.radio(is_selected, name.to_string()).clicked() {
+                        let chat_selector =
+                            ui.radio(is_selected, name.to_string()).context_menu(|ui| {
+                                ui.set_width(1.0);
+                                if chat_names.len() > 1 {
+                                    if ui.button("❌").clicked() {
+                                        let chat_to_remove_name = name.to_string();
+                                        let remove_command = BackendCommand::RemoveChatThread {
+                                            name: chat_to_remove_name.to_owned(),
+                                        };
+                                        frontend.sender.try_send(remove_command).unwrap();
+                                        if Some(chat_to_remove_name) == self.current_chat_name {
+                                            self.current_chat_name = Some(chat_names[0].to_owned())
+                                        }
+                                        self.chats.retain(|ch| &ch.name != name)
+                                    }
+                                }
+                            });
+
+                        if chat_selector.clicked() {
                             let new_chat_name = name.to_string();
                             self.current_chat_name = Some(new_chat_name);
                         }
@@ -188,24 +207,9 @@ impl ChatPage {
                         //         self.agent_info_modal = AgentInfoModal::from(agent, name);
                         //     }
                         // }
-                        match i {
-                            0 => {}
-                            _ => {
-                                if ui.small_button("❌").clicked() {
-                                    let chat_to_remove_name = name.to_string();
-                                    let remove_command = BackendCommand::RemoveChatThread {
-                                        name: chat_to_remove_name.to_owned(),
-                                    };
-                                    frontend.sender.try_send(remove_command).unwrap();
-                                    if Some(chat_to_remove_name) == self.current_chat_name {
-                                        self.current_chat_name = Some(chat_names[0].to_owned())
-                                    }
-                                    self.chats.retain(|ch| &ch.name != name)
-                                }
-                            }
-                        }
                     });
                 }
+
                 ui.add_space(10.0);
                 if ui.button(add_button_value).clicked() {
                     self.create_new_chat_modal_open = !self.create_new_chat_modal_open;
@@ -228,12 +232,55 @@ impl Chat {
         }
     }
 
+    fn handle_main_chat_interface(&mut self, ui: &mut egui::Ui) {
+        let buffer = &mut self.chat_buffer.as_ref();
+        for message in buffer.into_iter() {
+            let color = match message.role() {
+                MessageRole::User => egui::Color32::YELLOW,
+                MessageRole::Assistant => egui::Color32::GREEN,
+                _ => egui::Color32::DARK_RED,
+            };
+
+            let content = message.content().unwrap();
+            let code_chunk_split = content.split("```");
+            for (i, string) in code_chunk_split.into_iter().enumerate() {
+                let richtext = match i % 2 {
+                    0 => RichText::new(string).color(color),
+                    _ => RichText::new(string).code(),
+                };
+
+                match message.role() {
+                    MessageRole::User => {
+                        ui.with_layout(Layout::right_to_left(eframe::emath::Align::Min), |ui| {
+                            ui.label(richtext)
+                        });
+                    }
+                    _ => {
+                        ui.label(richtext);
+                    }
+                }
+            }
+        }
+        let chat_width = ui.available_width();
+        let chat_height = ui.available_height();
+        if let Some(current_stream_buffer) = &mut self.current_exchange.stream_buffer {
+            let model_output = egui::TextEdit::multiline(current_stream_buffer)
+                .text_color(egui::Color32::GREEN)
+                .frame(false)
+                .interactive(false);
+
+            // ui.add(model_output);
+            ui.add_sized([chat_width, chat_height], model_output);
+        }
+        ui.ctx().request_repaint();
+    }
+
     pub fn display(&mut self, frontend: &FrontendComms, outer_ui: &mut egui::Ui) {
         let mut scroll_to_bottom = false;
         let error_message = &mut self.error_message.clone();
 
         egui::Window::new("")
-            .id(Id::new("chat_window"))
+            .id(Id::new("user_input_window"))
             .anchor(Align2::RIGHT_BOTTOM, [-5.0, -5.0])
             .auto_sized()
             .movable(false)
@@ -294,30 +341,13 @@ impl Chat {
                 .stick_to_right(true);
 
             chat_scroll_area.show(ui, |ui| {
-                let buffer = &mut self.chat_buffer.as_ref();
-                for message in buffer.into_iter() {
-                    let color = match message.role() {
-                        MessageRole::User => egui::Color32::YELLOW,
-                        MessageRole::Assistant => egui::Color32::GREEN,
-                        _ => egui::Color32::DARK_RED,
-                    };
-                    ui.colored_label(color, message.content().unwrap());
-                }
-
-                if let Some(current_stream_buffer) = &mut self.current_exchange.stream_buffer {
-                    let model_output = egui::TextEdit::multiline(current_stream_buffer)
-                        .text_color(egui::Color32::GREEN)
-                        .frame(false)
-                        .interactive(false);
-                    ui.add_sized([chat_width, chat_height], model_output);
-                }
-                ui.ctx().request_repaint();
-
-                if scroll_to_bottom {
-                    ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
-                }
-                ui.set_max_height(chat_height);
+                self.handle_main_chat_interface(ui);
             });
+
+            if scroll_to_bottom {
+                ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
+            }
+            ui.set_max_height(chat_height);
         });
     }
 

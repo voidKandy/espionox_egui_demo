@@ -59,6 +59,7 @@ impl eframe::App for MainApplication {
     }
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        // ctx.set_style
         self.top_bar_ui(ctx, frame);
         Self::display_main_window(ctx, frame, |ui| match self.state {
             State::Chat => {
