@@ -95,13 +95,13 @@ impl AgentInfoModal {
         }
     }
 
-    fn init_prompt_ui(&mut self, ui: &mut egui::Ui) {
-        ui.vertical_centered(|ui| {
-            let prompt_ui_rc = Rc::clone(&self.init_prompt_ui);
-            InitPromptUi::display_message_input(ui, &prompt_ui_rc);
-            InitPromptUi::display_buttons(ui, &prompt_ui_rc);
-        });
-    }
+    // fn init_prompt_ui(&mut self, ui: &mut egui::Ui) {
+    //     ui.vertical_centered(|ui| {
+    //         let prompt_ui_rc = Rc::clone(&self.init_prompt_ui);
+    //         InitPromptUi::display_message_input(ui, &prompt_ui_rc);
+    //         InitPromptUi::display_buttons(ui, &prompt_ui_rc);
+    //     });
+    // }
 
     fn recall_mode(&mut self, ui: &mut egui::Ui) {
         let current_mode = &self.recall_mode;
@@ -111,15 +111,11 @@ impl AgentInfoModal {
         );
     }
 
-    fn caching_mechanism(&mut self, ui: &mut egui::Ui) {
-        self.caching_mechanism_ui.overview_display(ui);
-    }
-
     pub fn display_agent_form(&mut self, ui: &mut egui::Ui) {
         ui.add(egui::TextEdit::singleline(&mut self.chat_name).hint_text("New chat name"));
 
         if ui
-            .selectable_label(self.open.system_prompt, "System Prompt")
+            .selectable_label(self.open.system_prompt, "Init Prompt")
             .clicked()
         {
             self.open.system_prompt = !self.open.system_prompt;
@@ -127,7 +123,7 @@ impl AgentInfoModal {
         if self.open.system_prompt {
             self.open.recall_mode = false;
             self.open.caching_mechanism = false;
-            self.init_prompt_ui(ui);
+            InitPromptUi::overview_display(Rc::clone(&self.init_prompt_ui), ui);
         }
 
         ui.horizontal(|ui| {
@@ -159,7 +155,7 @@ impl AgentInfoModal {
         if self.open.caching_mechanism {
             self.open.recall_mode = false;
             self.open.system_prompt = false;
-            self.caching_mechanism(ui);
+            self.caching_mechanism_ui.overview_display(ui);
         }
     }
 }

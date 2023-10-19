@@ -68,10 +68,12 @@ impl ChatPage {
     pub fn display_new_chat_modal(&mut self, ui: &mut egui::Ui, frontend: &FrontendComms) {
         // let existing_names = self.all_chat_names();
         let modal = &mut self.agent_info_modal;
+        let x = ui.available_width() / 2.0;
+        let y = ui.available_height() / 2.0;
         egui::Window::new("New Chat")
             .title_bar(false)
-            .resizable(false)
             .collapsible(false)
+            .fixed_size((x, y))
             .anchor(Align2::CENTER_CENTER, [-10.0, 0.0])
             .show(ui.ctx(), |ui| {
                 let ui_width = ui.max_rect().width() / 2.0;
@@ -161,10 +163,10 @@ impl ChatPage {
         SidePanel::new(egui::panel::Side::Left, "ChatsPanel")
             .resizable(false)
             .show(outer_ui.ctx(), |ui| {
-                // let add_button_value = match self.create_new_chat_modal_open {
-                //     true => "➖",
-                //     false => "➕",
-                // };
+                let add_button_value = match self.create_new_chat_modal_open {
+                    true => "➖",
+                    false => "➕",
+                };
                 for (i, name) in chat_names.iter().enumerate() {
                     let is_selected = Some(name.to_string()) == self.current_chat_name;
                     ui.horizontal(|ui| {
@@ -205,7 +207,7 @@ impl ChatPage {
                     });
                 }
                 ui.add_space(10.0);
-                if ui.button("➕").clicked() {
+                if ui.button(add_button_value).clicked() {
                     self.create_new_chat_modal_open = !self.create_new_chat_modal_open;
                 }
             });
