@@ -241,13 +241,15 @@ impl Chat {
             let content = message.content().unwrap_or(String::new());
             let content = match message.role() {
                 MessageRole::User => format!("👤 {}", content),
+                MessageRole::Assistant => format!("🕵 {}", content),
                 _ => format!("💻 {}", content),
             };
             let code_chunk_split = content.split("```");
             for (i, mut string) in code_chunk_split.into_iter().enumerate() {
                 let color = match message.role() {
                     MessageRole::User => Color32::from_rgb(255, 223, 223),
-                    _ => Color32::from_rgb(210, 220, 255),
+                    MessageRole::Assistant => Color32::from_rgb(210, 220, 255),
+                    _ => Color32::from_rgb(255, 224, 230),
                 };
                 let font = match i % 2 {
                     0 => FontId::proportional(font_size),
@@ -308,7 +310,7 @@ impl Chat {
 
                     let user_input_handle = ui.add(user_input_box);
 
-                    let enter_button = egui::Button::new("⮊");
+                    let enter_button = egui::Button::new("⮨");
                     let enter_button_handle = match self.processing_response {
                         true => ui.spinner(),
                         false => ui
@@ -325,6 +327,7 @@ impl Chat {
                                         .set_directory("/")
                                         .pick_file()
                                     {
+                                        let path_string = path.display().to_string();
                                         let file = File::from(path);
                                         let message = file.to_message(MessageRole::User);
                                         frontend
@@ -334,6 +337,11 @@ impl Chat {
                                                 message,
                                             })
                                             .unwrap();
+                                        let response_content =
+                                            format!("Pushed file: {} to Agent memory", path_string);
+
+                                        self.chat_buffer
+                                            .push(response_content.to_message(MessageRole::System))
                                     }
                                 }
 
@@ -341,6 +349,7 @@ impl Chat {
                                     if let Some(path) =
                                         rfd::FileDialog::new().set_directory("/").pick_folder()
                                     {
+                                        let path_string = path.display().to_string();
                                         let directory = Directory::from(path);
                                         let message = directory.to_message(MessageRole::User);
 
@@ -351,6 +360,14 @@ impl Chat {
                                                 message,
                                             })
                                             .unwrap();
+
+                                        let response_content = format!(
+                                            "Pushed directory: {} to Agent memory",
+                                            path_string
+                                        );
+
+                                        self.chat_buffer
+                                            .push(response_content.to_message(MessageRole::System))
                                     }
                                 }
                             }),
