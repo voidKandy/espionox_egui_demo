@@ -124,12 +124,15 @@ impl AppBackend {
                                 .expect("Failed to get chat thread");
                             if let Some(sender) = &agent_thread.sender {
                                 tracing::info!("Trying to send prompt to {} agent", agent_name);
-                                sender.send(prompt).await.map_err(|err| {
-                                    BackendError::Unexpected(anyhow::anyhow!(
-                                        "Error sending command to agent thread: {:?}",
-                                        err
-                                    ))
-                                })?
+                                sender
+                                    .send(chat::ChatAgentMutation::Prompt(prompt))
+                                    .await
+                                    .map_err(|err| {
+                                        BackendError::Unexpected(anyhow::anyhow!(
+                                            "Error sending command to agent thread: {:?}",
+                                            err
+                                        ))
+                                    })?
                             } else {
                                 tracing::warn!("Couldn't get sender from {} agent", agent_name);
                             }
@@ -137,6 +140,31 @@ impl AppBackend {
                         BackendCommand::RemoveChatThread { name } => {
                             tracing::info!("Removing {} agent thread", name);
                             agent_threads.write().await.remove_by_name(&name);
+                        }
+
+                        BackendCommand::PushToAgentMemory {
+                            agent_name,
+                            message,
+                        } => {
+                            tracing::info!("Pushing message to agent memory");
+                            let threads_lock = agent_threads.read().await;
+                            let agent_thread = threads_lock
+                                .get_by_name(&agent_name)
+                                .expect("Failed to get agent thread");
+
+                            if let Some(sender) = &agent_thread.sender {
+                                sender
+                                    .send(chat::ChatAgentMutation::PushMessage(message))
+                                    .await
+                                    .map_err(|err| {
+                                        BackendError::Unexpected(anyhow::anyhow!(
+                                            "Error sending command to agent thread: {:?}",
+                                            err
+                                        ))
+                                    })?
+                            } else {
+                                tracing::warn!("Couldn't get sender from {} agent", agent_name);
+                            }
                         }
                     };
                 } else {

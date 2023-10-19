@@ -1,15 +1,15 @@
 use super::modals::AgentInfoModal;
 use crate::logic::comms::{BackendCommand, FrontendComms, FrontendRequest};
-use eframe::epaint::text::LayoutJob;
-use espionox::context::memory::{Message, MessageRole, MessageVector, ToMessage};
+use espionox::context::memory::{MessageRole, MessageVector, ToMessage};
 
-use eframe::egui::{self, TextStyle};
+use eframe::egui;
 
 use eframe::{
-    egui::{CentralPanel, Id, Label, Layout, RichText, Separator, SidePanel},
+    egui::{CentralPanel, Id, RichText, Separator, SidePanel},
     emath::Align2,
     epaint::{Color32, FontId},
 };
+use espionox::core::{Directory, File};
 
 #[derive(Debug)]
 pub struct Chat {
@@ -244,19 +244,28 @@ impl Chat {
                 _ => format!("💻 {}", content),
             };
             let code_chunk_split = content.split("```");
-            for (i, string) in code_chunk_split.into_iter().enumerate() {
+            for (i, mut string) in code_chunk_split.into_iter().enumerate() {
                 let color = match message.role() {
                     MessageRole::User => Color32::from_rgb(255, 223, 223),
                     _ => Color32::from_rgb(210, 220, 255),
                 };
-                let richtext = match i % 2 {
-                    0 => RichText::new(string).color(color).strong(),
-                    _ => RichText::new(string).code(),
+                let font = match i % 2 {
+                    0 => FontId::proportional(font_size),
+                    _ => FontId::monospace(font_size),
                 };
+
                 ui.horizontal(|ui| {
-                    ui.set_width(chat_width * 0.8);
-                    let label = Label::new(richtext.size(font_size)).wrap(true);
-                    ui.add(label);
+                    // ui.set_width(chat_width * 0.8);
+                    // let label = Label::new(richtext.size(font_size)).wrap(true);
+                    // ui.add(label);
+                    ui.add(
+                        egui::TextEdit::multiline(&mut string)
+                            .desired_width(chat_width)
+                            .text_color(color)
+                            .frame(false)
+                            .font(font)
+                            .margin([2.0, 1.0].into()),
+                    );
                 });
             }
         }
@@ -305,7 +314,46 @@ impl Chat {
                         false => ui
                             .add(enter_button)
                             .on_hover_text("Right click for more options")
-                            .context_menu(|ui| if ui.button("Add File").clicked() {}),
+                            .context_menu(|ui| {
+                                if ui.button("Add File").clicked() {
+                                    if let Some(path) = rfd::FileDialog::new()
+                                        .add_filter("plaintext", &["txt", "md"])
+                                        .add_filter(
+                                            "code",
+                                            &["rs", "toml", "yaml", "py", "js", "ts", "c", "json"],
+                                        )
+                                        .set_directory("/")
+                                        .pick_file()
+                                    {
+                                        let file = File::from(path);
+                                        let message = file.to_message(MessageRole::User);
+                                        frontend
+                                            .sender
+                                            .try_send(BackendCommand::PushToAgentMemory {
+                                                agent_name: self.name.to_string(),
+                                                message,
+                                            })
+                                            .unwrap();
+                                    }
+                                }
+
+                                if ui.button("Add Directory").clicked() {
+                                    if let Some(path) =
+                                        rfd::FileDialog::new().set_directory("/").pick_folder()
+                                    {
+                                        let directory = Directory::from(path);
+                                        let message = directory.to_message(MessageRole::User);
+
+                                        frontend
+                                            .sender
+                                            .try_send(BackendCommand::PushToAgentMemory {
+                                                agent_name: self.name.to_string(),
+                                                message,
+                                            })
+                                            .unwrap();
+                                    }
+                                }
+                            }),
                     };
 
                     let shift_enter_pressed = user_input_handle.has_focus()

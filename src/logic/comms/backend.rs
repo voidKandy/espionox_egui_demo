@@ -1,6 +1,6 @@
 use super::FrontendRequest;
 use crate::backend::BackendError;
-use espionox::agent::Agent;
+use espionox::{agent::Agent, context::memory::Message};
 use tokio::{
     sync::mpsc::{self, Receiver, Sender},
     task::JoinHandle,
@@ -8,9 +8,21 @@ use tokio::{
 
 #[derive(Clone, Debug)]
 pub enum BackendCommand {
-    StreamedCompletion { agent_name: String, prompt: String },
-    NewChatThread { name: String, agent: Agent },
-    RemoveChatThread { name: String },
+    StreamedCompletion {
+        agent_name: String,
+        prompt: String,
+    },
+    PushToAgentMemory {
+        agent_name: String,
+        message: Message,
+    },
+    NewChatThread {
+        name: String,
+        agent: Agent,
+    },
+    RemoveChatThread {
+        name: String,
+    },
 }
 
 unsafe impl Send for BackendCommand {}

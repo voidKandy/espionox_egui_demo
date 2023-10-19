@@ -1,4 +1,8 @@
-use espionox::{agent::Agent, context::memory::Memory, language_models::LanguageModel};
+use espionox::{
+    agent::Agent,
+    context::memory::{Memory, Message},
+    language_models::LanguageModel,
+};
 
 use super::{BackendError, BackendSender};
 use crate::logic::comms::FrontendRequest;
@@ -13,9 +17,14 @@ pub struct ChatAgentThread {
     handle: Option<JoinHandle<()>>,
     pub name: String,
     agent_construct: Option<AgentConstructor>,
-    pub sender: Option<mpsc::Sender<String>>,
+    pub sender: Option<mpsc::Sender<ChatAgentMutation>>,
     outer_sender: Arc<BackendSender>,
     // receiver: Option<mpsc::Receiver<String>>,
+}
+
+pub enum ChatAgentMutation {
+    Prompt(String),
+    PushMessage(Message),
 }
 
 #[derive(Debug, Clone)]
@@ -67,7 +76,7 @@ impl ChatAgentThread {
 
     #[tracing::instrument(name = "Spawn completion thread")]
     pub fn spawn_chat_thread(&mut self) -> anyhow::Result<()> {
-        let (tx, mut rx) = mpsc::channel::<String>(5);
+        let (tx, mut rx) = mpsc::channel::<ChatAgentMutation>(5);
         self.sender = Some(tx);
         tracing::info!("Set sender for {} agent thread", self.name);
         let outer_sender = Arc::clone(&self.outer_sender);
@@ -78,17 +87,25 @@ impl ChatAgentThread {
             loop {
                 tracing::info!("Listening on {} agent thread...", &chat_name);
                 match rx.try_recv() {
-                    Ok(prompt) => {
-                        tracing::info!("Prompt received on {} agent thread...", chat_name);
-                        Self::handle_completion_stream(
-                            chat_name.clone(),
-                            prompt,
-                            &mut agent,
-                            Arc::clone(&outer_sender),
-                        )
-                        .await
-                        .unwrap();
-                    }
+                    Ok(mutation) => match mutation {
+                        ChatAgentMutation::Prompt(prompt) => {
+                            tracing::info!("Prompt received on {} agent thread...", chat_name);
+                            Self::handle_completion_stream(
+                                chat_name.clone(),
+                                prompt,
+                                &mut agent,
+                                Arc::clone(&outer_sender),
+                            )
+                            .await
+                            .unwrap();
+                        }
+                        ChatAgentMutation::PushMessage(message) => {
+                            tracing::info!("Received message on agent thread");
+                            let role = &message.role().to_string();
+                            let content = message.content().unwrap();
+                            agent.memory.force_push_message_to_cache(role, content);
+                        }
+                    },
                     Err(err) => match err {
                         tokio::sync::mpsc::error::TryRecvError::Empty => {
                             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
