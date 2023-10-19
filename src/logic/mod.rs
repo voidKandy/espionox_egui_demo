@@ -99,7 +99,7 @@ impl MainApplication {
         use egui::*;
 
         CentralPanel::default().show(ctx, |ui| {
-            catppuccin_egui::set_theme(&ctx, catppuccin_egui::MACCHIATO);
+            // catppuccin_egui::set_theme(ctx, catppuccin_egui::MACCHIATO);
             let app_rect = ui.max_rect();
             let title_bar_height = 10.0;
             let title_bar_rect = {

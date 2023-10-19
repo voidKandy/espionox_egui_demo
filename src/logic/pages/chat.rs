@@ -1,13 +1,12 @@
-use std::{cell::RefCell, thread, time::Duration};
-
 use super::modals::AgentInfoModal;
 use crate::logic::comms::{BackendCommand, FrontendComms, FrontendRequest};
+use eframe::epaint::text::LayoutJob;
 use espionox::context::memory::{Message, MessageRole, MessageVector, ToMessage};
 
-use super::egui;
+use eframe::egui::{self, TextStyle};
 
 use eframe::{
-    egui::{CentralPanel, Id, Layout, RichText, Separator, SidePanel},
+    egui::{CentralPanel, Id, Label, Layout, RichText, Separator, SidePanel},
     emath::Align2,
     epaint::{Color32, FontId},
 };
@@ -234,43 +233,43 @@ impl Chat {
 
     fn handle_main_chat_interface(&mut self, ui: &mut egui::Ui) {
         let buffer = &mut self.chat_buffer.as_ref();
-        for message in buffer.into_iter() {
-            let color = match message.role() {
-                MessageRole::User => egui::Color32::YELLOW,
-                MessageRole::Assistant => egui::Color32::GREEN,
-                _ => egui::Color32::DARK_RED,
-            };
-
-            let content = message.content().unwrap();
-            let code_chunk_split = content.split("```");
-            for (i, string) in code_chunk_split.into_iter().enumerate() {
-                let richtext = match i % 2 {
-                    0 => RichText::new(string).color(color),
-                    _ => RichText::new(string).code(),
-                };
-
-                match message.role() {
-                    MessageRole::User => {
-                        ui.with_layout(Layout::right_to_left(eframe::emath::Align::Min), |ui| {
-                            ui.label(richtext)
-                        });
-                    }
-                    _ => {
-                        ui.label(richtext);
-                    }
-                }
-            }
-        }
         let chat_width = ui.available_width();
         let chat_height = ui.available_height();
+        let font_size = 16.0;
+
+        for message in buffer.into_iter() {
+            let content = message.content().unwrap_or(String::new());
+            let content = match message.role() {
+                MessageRole::User => format!("👤 {}", content),
+                _ => format!("💻 {}", content),
+            };
+            let code_chunk_split = content.split("```");
+            for (i, string) in code_chunk_split.into_iter().enumerate() {
+                let color = match message.role() {
+                    MessageRole::User => Color32::from_rgb(255, 223, 223),
+                    _ => Color32::from_rgb(210, 220, 255),
+                };
+                let richtext = match i % 2 {
+                    0 => RichText::new(string).color(color).strong(),
+                    _ => RichText::new(string).code(),
+                };
+                ui.horizontal(|ui| {
+                    ui.set_width(chat_width * 0.8);
+                    let label = Label::new(richtext.size(font_size)).wrap(true);
+                    ui.add(label);
+                });
+            }
+        }
+
         if let Some(current_stream_buffer) = &mut self.current_exchange.stream_buffer {
             let model_output = egui::TextEdit::multiline(current_stream_buffer)
-                .text_color(egui::Color32::GREEN)
+                .font(FontId::proportional(font_size))
                 .frame(false)
                 .interactive(false);
 
             // ui.add(model_output);
             ui.add_sized([chat_width, chat_height], model_output);
+            ui.spinner();
         }
         ui.ctx().request_repaint();
     }
@@ -281,53 +280,59 @@ impl Chat {
 
         egui::Window::new("")
             .id(Id::new("user_input_window"))
-            .anchor(Align2::RIGHT_BOTTOM, [-5.0, -5.0])
+            .anchor(Align2::CENTER_BOTTOM, [0.0, -10.0])
             .auto_sized()
             .movable(false)
             .title_bar(false)
             .show(outer_ui.ctx(), |ui| {
-                let user_input_box =
-                    egui::TextEdit::multiline(&mut self.current_exchange.user_input)
-                        .desired_rows(1)
-                        .lock_focus(true)
-                        .frame(false)
-                        .hint_text("Send a message")
-                        .vertical_align(eframe::emath::Align::BOTTOM);
+                ui.horizontal(|ui| {
+                    let user_input_box =
+                        egui::TextEdit::multiline(&mut self.current_exchange.user_input)
+                            .desired_rows(1)
+                            .lock_focus(true)
+                            .frame(false)
+                            .hint_text("Send a message")
+                            .vertical_align(eframe::emath::Align::BOTTOM);
 
-                if error_message.is_some() {
-                    ui.colored_label(Color32::RED, error_message.as_ref().unwrap());
-                }
+                    if error_message.is_some() {
+                        ui.colored_label(Color32::RED, error_message.as_ref().unwrap());
+                    }
 
-                let user_input_handle = ui.add(user_input_box);
+                    let user_input_handle = ui.add(user_input_box);
+                    let enter_button = ui.button("⮊");
 
-                let shift_enter_pressed = user_input_handle.has_focus()
-                    && ui.input(|i| i.modifiers.shift_only() && i.key_pressed(egui::Key::Enter));
-                let submit_button_pressed = ui.button("Enter").clicked();
-                let enter_pressed_with_content = user_input_handle.has_focus()
-                    && ui.input(|i| i.key_pressed(egui::Key::Enter))
-                    && !self.current_exchange.user_input.trim().is_empty();
+                    let shift_enter_pressed = user_input_handle.has_focus()
+                        && ui
+                            .input(|i| i.modifiers.shift_only() && i.key_pressed(egui::Key::Enter));
 
-                if shift_enter_pressed {
-                    // Do nothing
-                } else if enter_pressed_with_content || submit_button_pressed {
-                    match self.processing_response {
-                        true => {
-                            *error_message =
-                                Some("Please wait until current response is processed".to_string());
-                        }
-                        false => {
-                            scroll_to_bottom = true;
-                            self.chat_buffer.as_mut().push(
-                                self.current_exchange
-                                    .user_input
-                                    .as_str()
-                                    .to_message(MessageRole::User),
-                            );
-                            self.send_last_user_message_to_backend(frontend, outer_ui.ctx());
-                            self.processing_response = true;
+                    let submit_button_pressed = enter_button.clicked();
+
+                    let enter_pressed_with_content = user_input_handle.has_focus()
+                        && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                        && !self.current_exchange.user_input.trim().is_empty();
+                    if shift_enter_pressed {
+                        // Do nothing
+                    } else if enter_pressed_with_content || submit_button_pressed {
+                        match self.processing_response {
+                            true => {
+                                *error_message = Some(
+                                    "Please wait until current response is processed".to_string(),
+                                );
+                            }
+                            false => {
+                                scroll_to_bottom = true;
+                                self.chat_buffer.as_mut().push(
+                                    self.current_exchange
+                                        .user_input
+                                        .as_str()
+                                        .to_message(MessageRole::User),
+                                );
+                                self.send_last_user_message_to_backend(frontend, outer_ui.ctx());
+                                self.processing_response = true;
+                            }
                         }
                     }
-                }
+                });
             });
 
         CentralPanel::default().show(outer_ui.ctx(), |ui| {
