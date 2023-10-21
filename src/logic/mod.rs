@@ -16,7 +16,7 @@ use tokio::sync::mpsc;
 pub struct MainApplication {
     state: State,
     chat_page: ChatPage,
-    settings_page: SettingsPage,
+    // settings_page: SettingsPage,
     frontend: FrontendComms,
     backend: AppBackend,
 }
@@ -44,7 +44,7 @@ impl Default for MainApplication {
         Self {
             state: State::default(),
             chat_page: ChatPage::init(),
-            settings_page: SettingsPage::from(&backend),
+            // settings_page: SettingsPage::from(&backend),
             frontend,
             backend,
         }
@@ -69,7 +69,10 @@ impl eframe::App for MainApplication {
                 self.chat_page.display_current_chat(&self.frontend, ui);
                 // let _ = self.backend.listen_for_commands();
             }
-            State::Settings => self.settings_page.display(ui),
+            State::Settings => {
+
+                // self.settings_page.display(ui),
+            }
         });
     }
 }

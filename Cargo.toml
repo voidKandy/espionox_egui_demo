@@ -13,7 +13,7 @@ catppuccin-egui = "2.0"
 tokio = { version = "1.28.2", features = ["full"] }
 lazy_async_promise = { version = "0.5.0" }
 
-espionox = { git = "https://github.com/voidKandy/espionox_lib" , features=["long_term_memory"]}
+espionox = { git = "https://github.com/voidKandy/espionox_lib" , branch="stable", features=["long_term_memory"]}
 anyhow = "1.0.71"
 
 tracing = { version = "0.1.37", features = ["log"] }
