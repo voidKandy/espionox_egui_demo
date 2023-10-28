@@ -7,11 +7,11 @@ use eframe::{
     epaint::Color32,
 };
 use espionox::{
-    agent::Agent,
-    context::memory::{
+    agents::Agent,
+    language_models::LanguageModel,
+    memory::{
         long_term::LongTermMemory, CachingMechanism, Memory, Message, MessageVector, RecallMode,
     },
-    language_models::LanguageModel,
 };
 use std::{any, cell::RefCell, rc::Rc};
 
@@ -65,7 +65,7 @@ impl TryInto<BackendCommand> for &mut AgentInfoModal {
 impl AgentInfoModal {
     pub fn new_empty() -> Self {
         let prompt = MessageVector::from_message(Message::new_standard(
-            espionox::context::memory::MessageRole::System,
+            espionox::memory::MessageRole::System,
             &String::new(),
         ));
         let init_prompt_ui = Rc::new(RefCell::new(prompt.into()));

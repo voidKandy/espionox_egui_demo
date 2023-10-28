@@ -1,6 +1,6 @@
 use eframe::egui::{self, Button, Layout};
 use espionox::{
-    context::memory::{Message, MessageRole, MessageVector},
+    memory::{Message, MessageRole, MessageVector},
     persistance::prompts::{get_prompts_from_file, Prompt},
 };
 use std::{cell::RefCell, rc::Rc};
@@ -113,10 +113,8 @@ impl InitPromptUi {
         ui.horizontal(|ui| {
             let mut prompt_ui = prompt_ui_rc.borrow_mut();
 
-            let empty_message = Message::new_standard(
-                espionox::context::memory::MessageRole::System,
-                &String::new(),
-            );
+            let empty_message =
+                Message::new_standard(espionox::memory::MessageRole::System, &String::new());
 
             let last_button = Button::new("<").small();
             let next_button = Button::new(">").small();

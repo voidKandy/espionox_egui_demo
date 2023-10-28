@@ -1,7 +1,7 @@
 pub mod chat;
 use super::comms::{backend::*, FrontendRequest};
 use chat::{ChatAgentThread, ChatThreadVector};
-use espionox::{agent::Agent, context::memory::Memory};
+use espionox::{agents::Agent, memory::Memory};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex, RwLock};
 
@@ -137,6 +137,7 @@ impl AppBackend {
                                 tracing::warn!("Couldn't get sender from {} agent", agent_name);
                             }
                         }
+
                         BackendCommand::RemoveChatThread { name } => {
                             tracing::info!("Removing {} agent thread", name);
                             agent_threads.write().await.remove_by_name(&name);

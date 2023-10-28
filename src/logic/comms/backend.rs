@@ -1,6 +1,6 @@
 use super::FrontendRequest;
 use crate::backend::BackendError;
-use espionox::{agent::Agent, context::memory::Message};
+use espionox::{agents::Agent, memory::Message};
 use tokio::{
     sync::mpsc::{self, Receiver, Sender},
     task::JoinHandle,

@@ -288,7 +288,7 @@ dependencies = [
  "polling",
  "rustix 0.37.26",
  "slab",
- "socket2 0.4.9",
+ "socket2 0.4.10",
  "waker-fn",
 ]
 
@@ -852,9 +852,9 @@ dependencies = [
 
 [[package]]
 name = "cpufeatures"
-version = "0.2.9"
+version = "0.2.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a17b76ff3a4162b0b27f354a0c87015ddad39d35f9c0c36607a3bdd175dde1f1"
+checksum = "3fbc60abd742b35f2492f808e1abbb83d45f72db402e14c55057edc9c7b1e9e4"
 dependencies = [
  "libc",
 ]
@@ -1274,7 +1274,7 @@ dependencies = [
 [[package]]
 name = "espionox"
 version = "1.0.0"
-source = "git+https://github.com/voidKandy/espionox_lib#f1540b0af512dceb50c6b80c9106ed43959130c8"
+source = "git+https://github.com/voidKandy/espionox_lib?branch=stable#d5cd18593b6e8a0eb9e964c9df773813a24ad287"
 dependencies = [
  "anyhow",
  "async-recursion",
@@ -1284,7 +1284,6 @@ dependencies = [
  "futures-util",
  "once_cell",
  "pgvector",
- "pollster",
  "rand",
  "reqwest",
  "rust-bert",
@@ -1952,7 +1951,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.4.9",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -2979,12 +2978,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pollster"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22686f4785f02a4fcc856d3b3bb19bf6c8160d103f7a99cc258bddd0251dc7f2"
-
-[[package]]
 name = "postgres"
 version = "0.19.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3259,9 +3252,9 @@ dependencies = [
 
 [[package]]
 name = "rfd"
-version = "0.12.0"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "241a0deb168c88050d872294f7b3106c1dfa8740942bcc97bc91b98e97b5c501"
+checksum = "3c9e7b57df6e8472152674607f6cc68aa14a748a3157a857a94f516e11aeacc2"
 dependencies = [
  "block",
  "dispatch",
@@ -3721,9 +3714,9 @@ dependencies = [
 
 [[package]]
 name = "socket2"
-version = "0.4.9"
+version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64a4a911eed85daf18834cfaa86a79b7d266ff93ff5ba14005426219480ed662"
+checksum = "9f7916fc008ca5542385b89a3d3ce689953c143e9304a9bf8beec1de48994c0d"
 dependencies = [
  "libc",
  "winapi",
@@ -3731,9 +3724,9 @@ dependencies = [
 
 [[package]]
 name = "socket2"
-version = "0.5.4"
+version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4031e820eb552adee9295814c0ced9e5cf38ddf1e8b7d566d6de8e2538ea989e"
+checksum = "7b5fac59a5cb5dd637972e5fca70daf0523c9067fcdc4842f053dae04a18f8e9"
 dependencies = [
  "libc",
  "windows-sys 0.48.0",
@@ -4311,7 +4304,7 @@ dependencies = [
  "parking_lot 0.12.1",
  "pin-project-lite",
  "signal-hook-registry",
- "socket2 0.5.4",
+ "socket2 0.5.5",
  "tokio-macros",
  "windows-sys 0.48.0",
 ]
@@ -4357,7 +4350,7 @@ dependencies = [
  "postgres-protocol",
  "postgres-types",
  "rand",
- "socket2 0.5.4",
+ "socket2 0.5.5",
  "tokio",
  "tokio-util",
  "whoami",

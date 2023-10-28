@@ -1,7 +1,7 @@
 use espionox::{
-    agent::Agent,
-    context::memory::{Memory, Message},
+    agents::Agent,
     language_models::LanguageModel,
+    memory::{Memory, Message},
 };
 
 use super::{BackendError, BackendSender};
@@ -101,9 +101,7 @@ impl ChatAgentThread {
                         }
                         ChatAgentMutation::PushMessage(message) => {
                             tracing::info!("Received message on agent thread");
-                            let role = &message.role().to_string();
-                            let content = message.content().unwrap();
-                            agent.memory.force_push_message_to_cache(role, content);
+                            agent.memory.force_push_message_to_cache(message);
                         }
                     },
                     Err(err) => match err {
@@ -146,7 +144,7 @@ impl ChatAgentThread {
         }
         agent
             .memory
-            .push_to_message_cache("assistant", full_message.join(""))
+            .push_to_message_cache(Some("assistant"), full_message.join(""))
             .await;
         full_message.clear();
 

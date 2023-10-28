@@ -2,7 +2,7 @@ use eframe::{
     egui::{self, RichText},
     epaint::{Color32, FontId},
 };
-use espionox::context::memory::CachingMechanism;
+use espionox::memory::CachingMechanism;
 
 #[derive(Debug)]
 pub struct CachingMechanismUi {

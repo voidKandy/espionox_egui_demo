@@ -1,6 +1,6 @@
 use super::modals::AgentInfoModal;
 use crate::logic::comms::{BackendCommand, FrontendComms, FrontendRequest};
-use espionox::context::memory::{MessageRole, MessageVector, ToMessage};
+use espionox::memory::{MessageRole, MessageVector, ToMessage};
 
 use eframe::egui;
 
@@ -115,7 +115,7 @@ impl ChatPage {
                                 .stream_buffer
                                 .take()
                                 .unwrap()
-                                .to_message(MessageRole::Assistant),
+                                .to_message_with_role(MessageRole::Assistant),
                         );
                     }
                 }
@@ -329,19 +329,21 @@ impl Chat {
                                     {
                                         let path_string = path.display().to_string();
                                         let file = File::from(path);
-                                        let message = file.to_message(MessageRole::User);
+                                        // file.get_summary().await
                                         frontend
                                             .sender
                                             .try_send(BackendCommand::PushToAgentMemory {
                                                 agent_name: self.name.to_string(),
-                                                message,
+                                                message: file.to_message(),
                                             })
                                             .unwrap();
                                         let response_content =
                                             format!("Pushed file: {} to Agent memory", path_string);
 
-                                        self.chat_buffer
-                                            .push(response_content.to_message(MessageRole::System))
+                                        self.chat_buffer.push(
+                                            response_content
+                                                .to_message_with_role(MessageRole::System),
+                                        )
                                     }
                                 }
 
@@ -351,23 +353,27 @@ impl Chat {
                                     {
                                         let path_string = path.display().to_string();
                                         let directory = Directory::from(path);
-                                        let message = directory.to_message(MessageRole::User);
+                                        let messages: MessageVector = directory.into();
 
-                                        frontend
-                                            .sender
-                                            .try_send(BackendCommand::PushToAgentMemory {
-                                                agent_name: self.name.to_string(),
-                                                message,
-                                            })
-                                            .unwrap();
+                                        for message in messages.as_ref().to_owned().into_iter() {
+                                            frontend
+                                                .sender
+                                                .try_send(BackendCommand::PushToAgentMemory {
+                                                    agent_name: self.name.to_string(),
+                                                    message,
+                                                })
+                                                .unwrap();
+                                        }
 
                                         let response_content = format!(
                                             "Pushed directory: {} to Agent memory",
                                             path_string
                                         );
 
-                                        self.chat_buffer
-                                            .push(response_content.to_message(MessageRole::System))
+                                        self.chat_buffer.push(
+                                            response_content
+                                                .to_message_with_role(MessageRole::System),
+                                        )
                                     }
                                 }
                             }),
@@ -396,8 +402,7 @@ impl Chat {
                                 self.chat_buffer.as_mut().push(
                                     self.current_exchange
                                         .user_input
-                                        .as_str()
-                                        .to_message(MessageRole::User),
+                                        .to_message_with_role(MessageRole::User),
                                 );
                                 self.send_last_user_message_to_backend(frontend, outer_ui.ctx());
                                 self.processing_response = true;
